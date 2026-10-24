@@ -30,7 +30,7 @@ abstract class InputPolicy {
 
 /// Permissive fallback (unit tests, desktop-mouse-only environments):
 /// stylus/mouse ink, touch pans, trackpad handled natively.
-class PermissiveInputPolicy implements InputPolicy {
+class PermissiveInputPolicy extends InputPolicy {
   const PermissiveInputPolicy();
 
   @override
@@ -60,7 +60,7 @@ class PermissiveInputPolicy implements InputPolicy {
 ///     palm ≈ 25–45 mm ≈ >100 lpx on an iPad, a fingertip ≈ 40–55.)
 ///  4. Otherwise a touch pans/zooms — unless the user enabled
 ///     "draw with finger", in which case a lone finger inks.
-class PalmRejectionPolicy implements InputPolicy {
+class PalmRejectionPolicy extends InputPolicy {
   const PalmRejectionPolicy({
     this.enabled = true,
     this.allowFingerDrawing = false,
