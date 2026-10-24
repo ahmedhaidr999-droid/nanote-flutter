@@ -6,11 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../core/database/collections/document.dart';
-import '../../../../core/database/collections/folder.dart';
-import '../../../../core/database/collections/note_page.dart';
-import '../../../../core/database/isar_provider.dart';
-import '../../../../core/utils/path_helpers.dart';
+import '../../../core/database/collections/document.dart';
+import '../../../core/database/collections/folder.dart';
+import '../../../core/database/collections/note_page.dart';
+import '../../../core/database/isar_provider.dart';
+import '../../../core/utils/path_helpers.dart';
 import '../domain/library_models.dart';
 
 part 'library_repository.g.dart';

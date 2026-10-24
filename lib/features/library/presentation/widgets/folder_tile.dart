@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../core/database/collections/folder.dart';
-import '../../../../../core/utils/date_labels.dart';
+import '../../../../core/database/collections/folder.dart';
+import '../../../../core/utils/date_labels.dart';
 
 /// Grid card for one folder — a tinted "folder avatar" using the folder's
 /// chosen color.

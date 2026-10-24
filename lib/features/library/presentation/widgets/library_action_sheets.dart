@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../../core/database/collections/document.dart';
-import '../../../../../core/database/collections/folder.dart';
+import '../../../../core/database/collections/document.dart';
+import '../../../../core/database/collections/folder.dart';
 import '../../data/library_repository.dart';
 
 /// Long-press sheet for one document: Pin / Rename / Move / Delete.

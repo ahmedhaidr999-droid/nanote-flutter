@@ -2,8 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../core/database/collections/stroke.dart';
-import '../../../../core/database/isar_provider.dart';
+import '../../../core/database/collections/stroke.dart';
+import '../../../core/database/isar_provider.dart';
 
 part 'stroke_repository.g.dart';
 
@@ -23,7 +23,7 @@ abstract class InkPersistence {
 }
 
 @Riverpod(keepAlive: true)
-InkPersistence strokeRepository(Ref ref) async {
+Future<InkPersistence> strokeRepository(Ref ref) async {
   final isar = await ref.watch(isarProvider.future);
   return IsarStrokeRepository(isar);
 }

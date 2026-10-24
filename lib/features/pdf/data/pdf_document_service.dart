@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../core/utils/path_helpers.dart';
+import '../../../core/utils/path_helpers.dart';
 
 part 'pdf_document_service.g.dart';
 
@@ -124,9 +124,11 @@ class PdfDocumentService {
         w *= f;
         h *= f;
       }
+      // pdfx 2.6 render() takes DOUBLE width/height (px resolution hints),
+      // not ints — the native side rounds to the device raster grid.
       final image = await page.render(
-        width: w.round().clamp(1, 1 << 20),
-        height: h.round().clamp(1, 1 << 20),
+        width: w.round().clamp(1, 1 << 20).toDouble(),
+        height: h.round().clamp(1, 1 << 20).toDouble(),
         format: PdfPageImageFormat.png,
         backgroundColor: '#FFFFFF',
       );

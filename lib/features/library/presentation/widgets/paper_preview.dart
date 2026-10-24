@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../core/database/collections/document.dart';
+import '../../../../core/database/collections/document.dart';
 
 /// Procedural mini paper preview — for notebook covers in the library grid
 /// and template pickers. Deliberately NOT [PaperPainter]: the canvas painter

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/database/collections/document.dart';
+import '../../../../../core/database/collections/document.dart';
 import '../viewport_controller.dart';
 
 /// Procedural paper background — ruled / grid / dotted / blank, light or

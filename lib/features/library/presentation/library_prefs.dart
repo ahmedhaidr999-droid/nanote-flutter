@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'domain/library_models.dart';
+import '../domain/library_models.dart';
 
 part 'library_prefs.g.dart';
 

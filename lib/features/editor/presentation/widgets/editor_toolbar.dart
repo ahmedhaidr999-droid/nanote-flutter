@@ -199,7 +199,9 @@ class _ToolsRow extends ConsumerWidget {
                 ),
                 ButtonSegment(
                   value: ToolType.lasso,
-                  icon: Icon(Icons.lasso_select_outlined),
+                  // lasso_select* icons ship only in newer Flutter icon sets;
+                  // polyline_outlined (3.22) is the freeform-loop stand-in.
+                  icon: Icon(Icons.polyline_outlined),
                   tooltip: 'Lasso',
                 ),
               ],
@@ -283,7 +285,7 @@ class _SelectionActions extends ConsumerWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lasso_select_outlined,
+              Icon(Icons.polyline_outlined,
                   size: 18,
                   color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 8),
@@ -345,7 +347,7 @@ class _InkOptionsSheet extends ConsumerWidget {
                   notifier.setHighlighterColor),
               ToolType.eraser => _buildEraser(context, tool, notifier),
               ToolType.lasso => const ListTile(
-                  leading: Icon(Icons.lasso_select_outlined),
+                  leading: Icon(Icons.polyline_outlined),
                   title: Text('Draw a loop around your ink to select it'),
                   subtitle: Text(
                       'Move, resize, rotate, recolor or delete — selection '

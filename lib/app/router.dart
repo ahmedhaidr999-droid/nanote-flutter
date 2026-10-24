@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/editor/presentation/screens/editor_screen.dart';
-import '../../features/library/presentation/screens/home_screen.dart';
+import '../features/editor/presentation/screens/editor_screen.dart';
+import '../features/library/presentation/screens/home_screen.dart';
 
 /// Declarative navigation:
 ///

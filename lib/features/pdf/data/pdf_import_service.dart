@@ -8,10 +8,10 @@ import 'package:path/path.dart' as p;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../../core/database/collections/document.dart';
-import '../../../../core/database/collections/note_page.dart';
-import '../../../../core/database/isar_provider.dart';
-import '../../../../core/utils/path_helpers.dart';
+import '../../../core/database/collections/document.dart';
+import '../../../core/database/collections/note_page.dart';
+import '../../../core/database/isar_provider.dart';
+import '../../../core/utils/path_helpers.dart';
 import 'pdf_document_service.dart';
 
 part 'pdf_import_service.g.dart';

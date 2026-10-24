@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../core/database/collections/document.dart';
-import '../../../../core/database/collections/note_page.dart';
+import '../../../core/database/collections/document.dart';
+import '../../../core/database/collections/note_page.dart';
 import 'library_repository.dart';
 import '../presentation/library_prefs.dart';
 import '../domain/library_models.dart';

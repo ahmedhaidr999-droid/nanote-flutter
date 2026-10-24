@@ -58,7 +58,7 @@ dev_dependencies:
   # NOTE: riverpod_lint + custom_lint intentionally omitted for CI builds —
   # custom_lint's analyzer requirement conflicts with isar_generator (<6.0.0).
   build_runner: ^2.4.11
-  riverpod_generator: ^2.4.3
+  riverpod_generator: ^2.4.0
   isar_generator: ^3.1.0+1
   freezed: ^2.5.2
   json_serializable: ^6.8.0

@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../../../../../core/database/collections/document.dart';
-import '../../../../../core/utils/date_labels.dart';
-import '../../../../../core/utils/path_helpers.dart';
+import '../../../../core/database/collections/document.dart';
+import '../../../../core/utils/date_labels.dart';
+import '../../../../core/utils/path_helpers.dart';
 import 'paper_preview.dart';
 
 /// Cover thumbnail: imported PDFs read their pre-rendered cover from disk

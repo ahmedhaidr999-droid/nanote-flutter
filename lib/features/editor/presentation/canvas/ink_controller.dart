@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/database/collections/stroke.dart';
 import '../../data/stroke_repository.dart';
-import '../geometry/ink_geometry.dart';
-import '../models/stroke_codec.dart';
-import '../models/stroke_point.dart';
-import '../models/tools.dart';
+import '../../domain/geometry/ink_geometry.dart';
+import '../../domain/models/stroke_codec.dart';
+import '../../domain/models/stroke_point.dart';
+import '../../domain/models/tools.dart';
 
 /// A mutation of the committed stroke set. Drawing and erasing BOTH reduce
 /// to this shape, which is what makes undo/redo uniform:

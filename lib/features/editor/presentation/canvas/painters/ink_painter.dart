@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/database/collections/stroke.dart';
-import '../../domain/geometry/ink_geometry.dart';
+import '../../../../../core/database/collections/stroke.dart';
+import '../../../domain/geometry/ink_geometry.dart';
 import '../ink_controller.dart';
 import '../selection_controller.dart';
 import '../viewport_controller.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../../core/database/collections/document.dart';
-import '../../../../core/database/collections/folder.dart';
+import '../../../core/database/collections/document.dart';
+import '../../../core/database/collections/folder.dart';
 
 /// How the shelf sorts documents. Pinned documents float first in BOTH
 /// modes (see LibraryRepository._pinnedFirst).

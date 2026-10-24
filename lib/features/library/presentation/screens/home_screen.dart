@@ -94,7 +94,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.notebook_add_outlined),
+              // notebook_add_outlined does not exist in Flutter 3.22's icon
+              // set — note_add_outlined is the closest "new note" glyph.
+              leading: const Icon(Icons.note_add_outlined),
               title: const Text('New notebook'),
               subtitle: const Text('Blank paper, ready for ink'),
               onTap: () {
