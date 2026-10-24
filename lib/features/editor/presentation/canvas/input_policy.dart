@@ -20,6 +20,8 @@ class InputPolicyContext {
 /// (moves, ups) is routed by pointer id — policy logic never runs on the
 /// 120Hz move stream.
 abstract class InputPolicy {
+  const InputPolicy();
+
   PointerRole roleFor(PointerDownEvent event, InputPolicyContext context);
 
   /// Hardware eraser tip (Apple Pencil's back end) — routes to the eraser
