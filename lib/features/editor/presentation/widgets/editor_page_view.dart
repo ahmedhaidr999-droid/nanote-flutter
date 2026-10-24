@@ -9,6 +9,7 @@ import '../../domain/models/tools.dart';
 import '../canvas/ink_canvas.dart';
 import '../canvas/ink_controller.dart';
 import '../canvas/input_policy.dart';
+import '../canvas/navigation_shield.dart';
 import '../canvas/selection_controller.dart';
 import '../canvas/viewport_controller.dart';
 import '../../../pdf/data/pdf_document_service.dart';
@@ -53,12 +54,22 @@ class EditorPageView extends ConsumerStatefulWidget {
     required this.page,
     required this.tool,
     this.onControllersReady,
+    this.navigationShield,
+    this.fitBottomInset = 0,
   });
 
   final Document document;
   final NotePage page;
   final ToolPaletteState tool;
   final void Function(PageControllers controllers)? onControllersReady;
+
+  /// Shared pager-freeze channel — see [NavigationShield]. The hosting
+  /// editor owns the instance so every mounted page ORs into the same bit.
+  final NavigationShield? navigationShield;
+
+  /// Height (screen px) the initial fit must leave free below the page so
+  /// the floating tool pill never covers freshly-opened page content.
+  final double fitBottomInset;
 
   @override
   ConsumerState<EditorPageView> createState() => _EditorPageViewState();
@@ -156,6 +167,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     final doc = widget.document;
     final page = widget.page;
     final pdfPath = doc.pdfPath;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return LayoutBuilder(builder: (context, constraints) {
       final size = constraints.biggest;
@@ -163,7 +175,10 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
         _fitted = true;
         viewport.canvasSize = size;
         WidgetsBinding.instance.addPostFrameCallback(
-          (_) => viewport.fitToPage(size, margin: 16),
+          (_) => viewport.fitToPage(
+            Size(size.width, size.height - widget.fitBottomInset),
+            margin: 16,
+          ),
         );
       } else if (size != Size.zero && viewport.canvasSize != size) {
         viewport.canvasSize = size; // for the editor's fit button
@@ -177,6 +192,12 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
           enabled: input.palmRejection,
           allowFingerDrawing: input.allowFingerDrawing,
         ),
+        navigationShield: widget.navigationShield,
+        backdropColor: isDark
+            ? const Color(0xFF0D1117)
+            : const Color(0xFFE8EAF1),
+        pageShadowColor:
+            isDark ? Colors.black.withOpacity(0.55) : const Color(0x29434653),
         paperTemplate: page.templateOverride ?? doc.paperTemplate,
         paperShade: page.shadeOverride ?? doc.paperShade,
         pdfLayer: pdfPath == null

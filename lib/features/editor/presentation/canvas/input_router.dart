@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/models/tools.dart';
 import 'ink_controller.dart';
 import 'input_policy.dart';
+import 'navigation_shield.dart';
 import 'selection_controller.dart';
 import 'viewport_controller.dart';
 
@@ -18,12 +21,23 @@ enum _Mode { idle, inking, erasing, lassoing, transforming, panning, pinching }
 ///  • pinching — two fingers;
 ///  • native trackpad pan/zoom via PointerPanZoom* events.
 ///
+/// Touch routing model (v1.1 — the dual-gesture fix):
+///  • a LONE finger is PAGE NAVIGATION, owned natively by the hosting
+///    PageView (whose ScrollConfiguration admits touch only). The router
+///    tracks it but never pans the viewport — no gesture can be driven by
+///    both the router and the pager at once;
+///  • TWO fingers = pinch/pan, owned by the router (the pager is frozen
+///    via [NavigationShield] for the duration — and stays frozen until the
+///    pager settles to the nearest page);
+///  • stylus/mouse always ink/erase/lasso and NEVER navigate — the pager
+///    ignores their device kinds entirely.
+///
 /// Palm safety is layered:
 ///  1. the POLICY may verdict a touch `ignore` outright (stylus in range /
 ///     huge contact area) — ignored pointers are never tracked, so neither
 ///     their downs nor moves affect anything;
 ///  2. touches arriving while a stylus gesture is active are tracked but
-///     inert (they only take over as pan/pinch after the stylus lifts);
+///     inert (and the shield keeps the pager frozen while they rest);
 ///  3. a second finger while FINGER-drawing/lassoing cancels the gesture
 ///     and upgrades to a pinch — the user's intent flips to navigation.
 ///
@@ -46,6 +60,11 @@ class InputRouter {
   /// selection first).
   InputPolicy policy;
   ToolPaletteState tool = const ToolPaletteState();
+
+  /// Set by the hosting canvas (see [InkCanvas]). While ANY mounted page's
+  /// router reports an active gesture / stylus-in-range, the editor freezes
+  /// the page pager so a pen stroke or a pinch can never also scroll pages.
+  NavigationShield? navigationShield;
 
   _Mode _mode = _Mode.idle;
 
@@ -73,6 +92,9 @@ class InputRouter {
   DateTime? _lastStylusHover;
   static const _stylusRangeWindow = Duration(milliseconds: 800);
 
+  // Nudges the shield when the hover window lapses silently.
+  Timer? _shieldTimer;
+
   bool get _stylusInRange {
     final h = _lastStylusHover;
     return h != null && DateTime.now().difference(h) < _stylusRangeWindow;
@@ -95,6 +117,7 @@ class InputRouter {
         e.kind == PointerDeviceKind.invertedStylus) {
       _lastStylusHover = DateTime.now();
     }
+    _scheduleShield(); // hover streams re-arm the palm-rejection window
   }
 
   // ── Trackpad (native pan/zoom) ──────────────────────────────────────────
@@ -125,6 +148,16 @@ class InputRouter {
   // ── Pointer lifecycle ───────────────────────────────────────────────────
 
   void onPointerDown(PointerDownEvent e) {
+    try {
+      _pointerDown(e);
+    } finally {
+      // Every early return below must still re-evaluate the shield — a
+      // stylus down arms it immediately, before any mode settles.
+      _scheduleShield();
+    }
+  }
+
+  void _pointerDown(PointerDownEvent e) {
     _noteStylusActivity(e.kind);
     if (e.kind == PointerDeviceKind.trackpad) return; // pan-zoom events only
 
@@ -185,11 +218,13 @@ class InputRouter {
             _mode == _Mode.transforming) {
           return; // stylus gesture active — this touch rests inert (palm-safe)
         }
-        if (_touches.length == 1) {
-          _mode = _Mode.panning;
-        } else if (_touches.length >= 2) {
-          _beginPinch();
+        if (_touches.length >= 2) {
+          _beginPinch(); // two fingers = zoom / pan the page
         }
+        // A LONE finger is page navigation — the hosting PageView owns it
+        // natively (its ScrollConfiguration admits touch ONLY, so stylus
+        // strokes can never flip pages). The router merely tracks the
+        // finger so a second one can upgrade to a pinch.
         return;
 
       case PointerRole.ink:
@@ -273,9 +308,21 @@ class InputRouter {
     }
   }
 
-  void onPointerUp(PointerUpEvent e) => _finish(e.pointer, cancel: false);
+  void onPointerUp(PointerUpEvent e) {
+    try {
+      _finish(e.pointer, cancel: false);
+    } finally {
+      _scheduleShield();
+    }
+  }
 
-  void onPointerCancel(PointerCancelEvent e) => _finish(e.pointer, cancel: true);
+  void onPointerCancel(PointerCancelEvent e) {
+    try {
+      _finish(e.pointer, cancel: true);
+    } finally {
+      _scheduleShield();
+    }
+  }
 
   /// Desktop testing convenience: wheel pans the canvas.
   void onPointerSignal(PointerSignalEvent e) {
@@ -331,16 +378,41 @@ class InputRouter {
     }
   }
 
-  /// After an ink/lasso gesture ends, decide what remaining touches mean
-  /// (a resting palm quietly becomes pan/pinch, never a surprise stroke).
+  /// After an ink/lasso gesture ends, remaining touches rest INERT — they
+  /// are almost always the resting palm. Pinches may only start from FRESH
+  /// pointer-downs (two fingers landing), and lone fingers belong to the
+  /// PageView, never to the viewport. (The post-pinch single-finger pan
+  /// continuation in [_finish] is the one deliberate exception.)
   void _settleModeFromTouches() {
-    if (_touches.isEmpty) {
-      _mode = _Mode.idle;
-    } else if (_touches.length == 1) {
-      _mode = _Mode.panning;
-    } else {
-      _beginPinch();
+    _mode = _Mode.idle;
+  }
+
+  // ── Navigation shield plumbing ────────────────────────────────────────
+
+  bool get _shieldWanted => _mode != _Mode.idle || _stylusInRange;
+
+  void _scheduleShield() {
+    final shield = navigationShield;
+    if (shield == null) return;
+    shield.set(this, _shieldWanted);
+    if (_stylusInRange) {
+      // The hover window lapses silently (no event arrives) — nudge the
+      // shield when it does so the pager unfreezes exactly on time.
+      _shieldTimer?.cancel();
+      _shieldTimer = Timer(
+        _stylusRangeWindow + const Duration(milliseconds: 50),
+        () => navigationShield?.set(this, _shieldWanted),
+      );
     }
+  }
+
+  /// Stops the hover timer and detaches from the shared shield. Called by
+  /// the hosting canvas on dispose.
+  void dispose() {
+    _shieldTimer?.cancel();
+    _shieldTimer = null;
+    navigationShield?.set(this, false);
+    navigationShield = null;
   }
 
   void _beginPinch() {

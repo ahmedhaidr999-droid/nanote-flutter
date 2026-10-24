@@ -5,6 +5,8 @@ import '../../domain/models/tools.dart';
 import 'ink_controller.dart';
 import 'input_policy.dart';
 import 'input_router.dart';
+import 'navigation_shield.dart';
+import 'painters/backdrop_painter.dart';
 import 'painters/ink_painter.dart';
 import 'painters/paper_painter.dart';
 import 'painters/selection_overlay_painter.dart';
@@ -37,6 +39,9 @@ class InkCanvas extends StatefulWidget {
     this.paperShade = PaperShade.light,
     this.policy,
     this.overlayAccentColor = const Color(0xFF155EEF),
+    this.navigationShield,
+    this.backdropColor = const Color(0xFFE8EAF1),
+    this.pageShadowColor = const Color(0x29434653),
   });
 
   final InkController controller;
@@ -52,6 +57,15 @@ class InkCanvas extends StatefulWidget {
   final PaperShade paperShade;
   final InputPolicy? policy;
   final Color overlayAccentColor;
+
+  /// Shared "freeze the page pager" channel — the router reports active
+  /// gestures / stylus-in-range here (see [NavigationShield]).
+  final NavigationShield? navigationShield;
+
+  /// Workspace color around the page + the page's drop-shadow color
+  /// (Notewise/GoodNotes floating-page look).
+  final Color backdropColor;
+  final Color pageShadowColor;
 
   @override
   State<InkCanvas> createState() => _InkCanvasState();
@@ -69,6 +83,15 @@ class _InkCanvasState extends State<InkCanvas> {
       selection: widget.selection,
       policy: widget.policy ?? const PalmRejectionPolicy(),
     );
+    _router.navigationShield = widget.navigationShield;
+  }
+
+  @override
+  void dispose() {
+    // Cancels the router's hover timer and releases its shield entry so a
+    // disposed neighbor page can never keep the pager frozen.
+    _router.dispose();
+    super.dispose();
   }
 
   @override
@@ -93,6 +116,17 @@ class _InkCanvasState extends State<InkCanvas> {
       onPointerPanZoomEnd: _router.onPointerPanZoomEnd,
       child: Stack(
         children: [
+          CustomPaint(
+            // Workspace backdrop + floating-page shadow (below everything).
+            painter: BackdropPainter(
+              backdropColor: widget.backdropColor,
+              shadowColor: widget.pageShadowColor,
+              pageSize: Size(
+                  widget.viewport.pageWidth, widget.viewport.pageHeight),
+              viewport: widget.viewport,
+            ),
+            child: const SizedBox.expand(),
+          ),
           CustomPaint(
             painter: PaperPainter(
               template: widget.paperTemplate,

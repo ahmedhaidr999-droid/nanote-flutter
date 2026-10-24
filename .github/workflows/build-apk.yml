@@ -63,10 +63,17 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Nanote v1.0.0 — Android APK
+          tag_name: v1.1.0
+          name: Nanote v1.1.0 — Android APK
           body: |
             **Nanote** — offline-first, vector-based note-taking. 100% local. No cloud. No AI.
+
+            **v1.1.0 — Editor input & UX overhaul**
+            - ✍️ **Fixed:** writing with the stylus no longer scrolls/flips the page at the same time — pen strokes are dedicated ink gestures.
+            - 🤚 **Fixed:** palm touches can no longer flip pages while you write (navigation freezes during pen contact & proximity).
+            - 📄 **Smoother page turns:** springy iOS-style page physics, pre-mounted neighbor pages, no more dual-gesture fighting during swipes.
+            - 🎨 **New Notewise-style interface:** floating tool pill, page chip (‹ n / N ›) with jump-to-page, workspace backdrop with floating page shadow.
+            - Two fingers = pinch/zoom; one finger = page navigation; pen = ink only.
 
             **Install:** download `app-release.apk` below, open it on your Android device/tablet and allow "Install unknown apps" if prompted.
 
