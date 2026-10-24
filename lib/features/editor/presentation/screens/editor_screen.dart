@@ -400,7 +400,7 @@ class _EditorScrollBehavior extends ScrollBehavior {
   Widget buildScrollbar(
     BuildContext context,
     Widget child,
-    AxisDetails axisDetails,
+    ScrollableDetails details,
   ) =>
       child; // no scrollbar over the reading surface
 }
