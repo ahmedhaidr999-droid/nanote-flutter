@@ -186,7 +186,10 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     final viewport = _viewport;
     final selection = _selection;
     final text = _text;
-    if (ink == null || viewport == null || selection == null) {
+    if (ink == null ||
+        viewport == null ||
+        selection == null ||
+        text == null) {
       return const SizedBox.expand(); // Isar (+ PDF handle) still opening
     }
 
