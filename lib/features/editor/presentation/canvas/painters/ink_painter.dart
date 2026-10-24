@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../../../core/database/collections/stroke.dart';
 import '../../../domain/geometry/ink_geometry.dart';
+import '../../../domain/models/stroke_codec.dart';
 import '../ink_controller.dart';
 import '../selection_controller.dart';
 import '../viewport_controller.dart';
 
-/// Renders committed ink (cached outlines) plus the live stroke — in PAGE
-/// space, inside the shared viewport transform.
+/// Renders committed ink (cached outlines) plus the live stroke and the
+/// live shape ghosts — in PAGE space, inside the shared viewport transform.
 ///
 /// Repaint triggers: `repaint: controller ∪ viewport ∪ selection` — a
 /// stroke edit, a pan/zoom or a selection change repaint; nothing else
@@ -46,11 +47,13 @@ class InkPainter extends CustomPainter {
       if (s.maxX < visible.left || s.minX > visible.right) continue;
       if (s.maxY < visible.top || s.minY > visible.bottom) continue;
 
-      final o = controller.outlineOf(s);
-      final paint = paintFor(s.tool, s.colorValue);
-      canvas.drawPath(o.body, paint);
-      if (o.startRadius > 0) canvas.drawCircle(o.startCenter, o.startRadius, paint);
-      if (o.endRadius > 0) canvas.drawCircle(o.endCenter, o.endRadius, paint);
+      drawInkStroke(canvas, controller, s);
+    }
+
+    for (final s in controller.shapePreview) {
+      if (s.maxX < visible.left || s.minX > visible.right) continue;
+      if (s.maxY < visible.top || s.minY > visible.bottom) continue;
+      drawInkStroke(canvas, controller, s);
     }
 
     final a = controller.activeInk;
@@ -67,6 +70,48 @@ class InkPainter extends CustomPainter {
     }
 
     canvas.restore();
+  }
+
+  /// Draws ONE stroke — pen/highlighter via the cached variable-width
+  /// outline, shapes as a stroked polyline (crisp geometry with round
+  /// joins — Notewise-style). Shared with [SelectionOverlayPainter] so the
+  /// transformed selection preview renders identically.
+  static void drawInkStroke(Canvas canvas, InkController? ink, Stroke s) {
+    if (s.tool == InkTool.shape) {
+      final pts = s.readPoints();
+      if (pts.isEmpty) return;
+      if (pts.length == 1) {
+        // Dot shape (a degenerate drag) — one round cap.
+        canvas.drawCircle(
+          pts.first.position,
+          s.baseWidth / 2,
+          Paint()
+            ..color = Color(s.colorValue)
+            ..style = PaintingStyle.fill,
+        );
+        return;
+      }
+      final path = Path()..moveTo(pts.first.position.dx, pts.first.position.dy);
+      for (final p in pts.skip(1)) {
+        path.lineTo(p.position.dx, p.position.dy);
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Color(s.colorValue)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = s.baseWidth
+          ..strokeJoin = StrokeJoin.round
+          ..strokeCap = StrokeCap.round,
+      );
+      return;
+    }
+
+    final o = ink!.outlineOf(s);
+    final paint = paintFor(s.tool, s.colorValue);
+    canvas.drawPath(o.body, paint);
+    if (o.startRadius > 0) canvas.drawCircle(o.startCenter, o.startRadius, paint);
+    if (o.endRadius > 0) canvas.drawCircle(o.endCenter, o.endRadius, paint);
   }
 
   /// Highlighter ink multiplies with everything beneath it (other ink,

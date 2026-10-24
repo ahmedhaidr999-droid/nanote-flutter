@@ -3,34 +3,57 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/database/collections/text_block.dart';
+import '../../domain/models/shape_tool.dart';
 import '../../domain/models/tools.dart';
 import 'ink_controller.dart';
 import 'input_policy.dart';
 import 'navigation_shield.dart';
 import 'selection_controller.dart';
+import 'text_layer_controller.dart';
 import 'viewport_controller.dart';
 
-enum _Mode { idle, inking, erasing, lassoing, transforming, panning, pinching }
+enum _Mode {
+  idle,
+  inking,
+  erasing,
+  lassoing,
+  transforming,
+  panning,
+  pinching,
+  shaping,
+  texting,
+}
 
-/// Routes RAW pointer events (no gesture arena — zero-latency) through the
+/// Routes RAW pointer events (no gesture arena — zero latency) through the
 /// [InputPolicy] to one of:
 ///
-///  • inking / erasing / lassoing / transforming — stylus, mouse, or a lone
-///    finger when "draw with finger" is enabled;
-///  • panning — one finger, desktop wheel;
+///  • inking / erasing / lassoing / transforming / shaping / texting —
+///    stylus, mouse, or a lone finger when "draw with finger" is enabled;
+///  • panning — the HAND tool (any single pointer), desktop wheel;
 ///  • pinching — two fingers;
 ///  • native trackpad pan/zoom via PointerPanZoom* events.
 ///
 /// Touch routing model (v1.1 — the dual-gesture fix):
 ///  • a LONE finger is PAGE NAVIGATION, owned natively by the hosting
-///    PageView (whose ScrollConfiguration admits touch only). The router
+///    PageView (whose ScrollConfiguration admits touch only — and admits
+///    NO device while the hand tool or finger-inking is active). The router
 ///    tracks it but never pans the viewport — no gesture can be driven by
 ///    both the router and the pager at once;
 ///  • TWO fingers = pinch/pan, owned by the router (the pager is frozen
 ///    via [NavigationShield] for the duration — and stays frozen until the
 ///    pager settles to the nearest page);
-///  • stylus/mouse always ink/erase/lasso and NEVER navigate — the pager
+///  • stylus/mouse always act on the canvas and NEVER navigate — the pager
 ///    ignores their device kinds entirely.
+///
+/// v1.2 additions (Notewise tool parity):
+///  • HAND TOOL — while selected, ANY single pointer pans the page inside
+///    its canvas and the pager is frozen (via the shield + empty
+///    dragDevices), so a finger can never flip pages while it pans;
+///  • SHAPE TOOL — ink-role pointers drag a shape preview (sampled into
+///    ghost strokes); pen-up commits it as ONE undo unit;
+///  • TEXT TOOL — tap empty space creates a text box (UI callback), tap a
+///    block edits it, drag a block moves it.
 ///
 /// Palm safety is layered:
 ///  1. the POLICY may verdict a touch `ignore` outright (stylus in range /
@@ -39,7 +62,7 @@ enum _Mode { idle, inking, erasing, lassoing, transforming, panning, pinching }
 ///  2. touches arriving while a stylus gesture is active are tracked but
 ///     inert (and the shield keeps the pager frozen while they rest);
 ///  3. a second finger while FINGER-drawing/lassoing cancels the gesture
-///     and upgrades to a pinch — the user's intent flips to navigation.
+///    and upgrades to a pinch — the user's intent flips to navigation.
 ///
 /// Everything is a plain state machine over pointer ids — no GestureDetectors,
 /// no recognizers competing in an arena, no 100ms waits.
@@ -48,12 +71,21 @@ class InputRouter {
     required this.ink,
     required this.viewport,
     this.selection,
+    this.text,
     InputPolicy? policy,
   }) : policy = policy ?? const PalmRejectionPolicy();
 
   final InkController ink;
   final ViewportController viewport;
   final SelectionController? selection;
+
+  /// Text layer of the SAME page (text tool routing). Null on harness
+  /// canvases without text support.
+  TextLayerController? text;
+
+  /// UI callbacks for the text tool — the hosting widget owns the sheets.
+  void Function(Offset pagePoint)? onCreateText;
+  void Function(TextBlock block)? onEditText;
 
   /// Current policy & tool; the hosting widget refreshes these on cold-state
   /// changes. Never swapped mid-gesture by the UI (tool changes clear the
@@ -62,8 +94,9 @@ class InputRouter {
   ToolPaletteState tool = const ToolPaletteState();
 
   /// Set by the hosting canvas (see [InkCanvas]). While ANY mounted page's
-  /// router reports an active gesture / stylus-in-range, the editor freezes
-  /// the page pager so a pen stroke or a pinch can never also scroll pages.
+  /// router reports an active gesture / stylus-in-range / hand tool, the
+  /// editor freezes the page pager so a pen stroke or a pinch can never
+  /// also scroll pages.
   NavigationShield? navigationShield;
 
   _Mode _mode = _Mode.idle;
@@ -73,6 +106,21 @@ class InputRouter {
 
   int? _lassoPointer;
   bool _lassoIsTouch = false;
+
+  /// The pointer that owns a HAND-tool pan (may be a touch OR a stylus).
+  int? _panPointer;
+
+  /// Shape gesture state.
+  int? _shapePointer;
+  Offset? _shapeAnchor;
+  bool _shapeMoved = false;
+  double _shapeScreenDist = 0;
+
+  /// Text gesture state.
+  int? _textPointer;
+  TextBlock? _textBlock;
+  Offset? _textLastPage;
+  bool _textMoved = false;
 
   /// Tracked touch pointer id → latest screen position. NOTE: touches the
   /// policy rejected are deliberately absent — an untracked pointer is a
@@ -104,7 +152,8 @@ class InputRouter {
       InputPolicyContext(stylusInRange: _stylusInRange);
 
   void _noteStylusActivity(PointerDeviceKind kind) {
-    if (kind == PointerDeviceKind.stylus || kind == PointerDeviceKind.invertedStylus) {
+    if (kind == PointerDeviceKind.stylus ||
+        kind == PointerDeviceKind.invertedStylus) {
       // Active stylus contact implies in-range; refreshes the hover window.
       _lastStylusHover = DateTime.now();
     }
@@ -212,10 +261,35 @@ class InputRouter {
         return;
 
       case PointerRole.pan:
+        // HAND TOOL: any single pointer pans the page canvas itself; a
+        // second touch upgrades to a pinch. The pager is frozen the whole
+        // time the hand tool stays selected (see [_shieldWanted] + the
+        // editor's empty dragDevices), so this pan is the ONLY thing the
+        // finger does.
+        if (tool.tool == ToolType.hand) {
+          if (_mode == _Mode.idle) {
+            if (_touches.length >= 2) {
+              _beginPinch();
+            } else {
+              _panPointer = e.pointer;
+              _mode = _Mode.panning;
+            }
+          } else if (_mode == _Mode.panning &&
+              _panPointer != null &&
+              e.pointer != _panPointer &&
+              e.kind == PointerDeviceKind.touch) {
+            // Second finger joins an ongoing hand pan → upgrade to pinch.
+            _panPointer = null;
+            _beginPinch();
+          }
+          return;
+        }
         if (_mode == _Mode.inking ||
             _mode == _Mode.erasing ||
             _mode == _Mode.lassoing ||
-            _mode == _Mode.transforming) {
+            _mode == _Mode.transforming ||
+            _mode == _Mode.shaping ||
+            _mode == _Mode.texting) {
           return; // stylus gesture active — this touch rests inert (palm-safe)
         }
         if (_touches.length >= 2) {
@@ -230,6 +304,9 @@ class InputRouter {
       case PointerRole.ink:
         if (_inkPointer != null ||
             _lassoPointer != null ||
+            _panPointer != null ||
+            _shapePointer != null ||
+            _textPointer != null ||
             _mode == _Mode.lassoing ||
             _mode == _Mode.transforming) {
           return; // a gesture already owns the canvas
@@ -254,6 +331,25 @@ class InputRouter {
             ink.beginErase(page);
             ink.eraseSegment(page, tool.eraserSize, tool.eraserMode);
 
+          case ToolType.shape:
+            // A shape gesture with the HAND as second pointer: ignore the
+            // hand (only one shape at a time).
+            _shapePointer = e.pointer;
+            _shapeAnchor = viewport.screenToPage(e.localPosition);
+            _shapeMoved = false;
+            _shapeScreenDist = 0;
+            _mode = _Mode.shaping;
+            ink.cancelShape(); // clear any stale ghosts, no notify churn
+
+          case ToolType.text:
+            final page = viewport.screenToPage(e.localPosition);
+            final block = text?.blockAt(page);
+            _textPointer = e.pointer;
+            _textBlock = block;
+            _textLastPage = page;
+            _textMoved = false;
+            _mode = _Mode.texting;
+
           case ToolType.lasso:
             final sel = selection;
             if (sel == null) return;
@@ -266,14 +362,20 @@ class InputRouter {
               _mode = _Mode.transforming;
               return;
             }
-            final page = viewport.screenToPage(e.localPosition);
-            if (sel.hasSelection && sel.hitTestSelection(page)) {
+            final lassoPage = viewport.screenToPage(e.localPosition);
+            if (sel.hasSelection && sel.hitTestSelection(lassoPage)) {
               sel.beginTransform(SelectionHandle.move, e.localPosition);
               _mode = _Mode.transforming;
             } else {
-              sel.beginLoop(page);
+              sel.beginLoop(lassoPage);
               _mode = _Mode.lassoing;
             }
+
+          case ToolType.hand:
+            // Stylus + hand tool = pan too (belt & braces — the policy
+            // normally routes stylus to `ink`).
+            _panPointer = e.pointer;
+            _mode = _Mode.panning;
         }
     }
   }
@@ -298,8 +400,47 @@ class InputRouter {
       return;
     }
 
+    if (e.pointer == _shapePointer) {
+      _shapeScreenDist += e.delta.distance;
+      final anchor = _shapeAnchor;
+      if (anchor != null) {
+        final end = viewport.screenToPage(e.localPosition);
+        if (_shapeScreenDist > 4 || _shapeMoved) {
+          _shapeMoved = true;
+          ink.previewShape(sampleShape(tool.shapeType, anchor, end), tool);
+        }
+      }
+      return;
+    }
+
+    if (e.pointer == _textPointer) {
+      final page = viewport.screenToPage(e.localPosition);
+      final block = _textBlock;
+      final last = _textLastPage;
+      if (block != null && last != null) {
+        final delta = page - last;
+        if (delta != Offset.zero) {
+          text?.moveBlockBy(block, delta);
+          _textMoved = _textMoved || e.delta.distance > 1;
+        }
+      }
+      _textLastPage = page;
+      return;
+    }
+
+    // Touch bookkeeping first — pinch focal math always stays fresh.
     if (_touches.containsKey(e.pointer)) {
       _touches[e.pointer] = e.localPosition;
+    }
+
+    if (e.pointer == _panPointer) {
+      // HAND-tool pan: the owning pointer may be a STYLUS, which is never
+      // tracked in [_touches] — hence its own branch.
+      if (_mode == _Mode.panning) viewport.panBy(e.delta);
+      return;
+    }
+
+    if (_touches.containsKey(e.pointer)) {
       if (_mode == _Mode.panning) {
         viewport.panBy(e.delta);
       } else if (_mode == _Mode.pinching) {
@@ -363,6 +504,54 @@ class InputRouter {
       return;
     }
 
+    if (pointer == _panPointer) {
+      _panPointer = null;
+      _touches.remove(pointer);
+      _settleModeFromTouches();
+      return;
+    }
+
+    if (pointer == _shapePointer) {
+      if (cancel) {
+        ink.cancelShape();
+      } else if (_shapeMoved) {
+        ink.endShape(); // ONE undo unit for the whole shape
+      } else {
+        ink.cancelShape(); // tap, not a drag — nothing to keep
+      }
+      _shapePointer = null;
+      _shapeAnchor = null;
+      _shapeMoved = false;
+      _shapeScreenDist = 0;
+      _touches.remove(pointer);
+      _settleModeFromTouches();
+      return;
+    }
+
+    if (pointer == _textPointer) {
+      final block = _textBlock;
+      if (!cancel) {
+        if (!_textMoved) {
+          // Tap: open the editor sheet for a hit block, or create one.
+          final page = _textLastPage;
+          if (block != null) {
+            onEditText?.call(block);
+          } else if (page != null) {
+            onCreateText?.call(page);
+          }
+        } else if (block != null) {
+          text?.persistBlock(block); // drag moved it — flush the new anchor
+        }
+      }
+      _textPointer = null;
+      _textBlock = null;
+      _textLastPage = null;
+      _textMoved = false;
+      _touches.remove(pointer);
+      _settleModeFromTouches();
+      return;
+    }
+
     if (!_touches.containsKey(pointer)) return; // rejected palm, untracked
     _touches.remove(pointer);
     if (_mode == _Mode.panning) {
@@ -378,18 +567,29 @@ class InputRouter {
     }
   }
 
-  /// After an ink/lasso gesture ends, remaining touches rest INERT — they
-  /// are almost always the resting palm. Pinches may only start from FRESH
-  /// pointer-downs (two fingers landing), and lone fingers belong to the
-  /// PageView, never to the viewport. (The post-pinch single-finger pan
-  /// continuation in [_finish] is the one deliberate exception.)
+  /// After an ink/lasso/shape/text gesture ends, remaining touches rest
+  /// INERT — they are almost always the resting palm. Pinches may only
+  /// start from FRESH pointer-downs (two fingers landing), and lone fingers
+  /// belong to the PageView, never to the viewport. (The post-pinch
+  /// single-finger pan continuation in [_finish] is the one deliberate
+  /// exception.)
   void _settleModeFromTouches() {
     _mode = _Mode.idle;
   }
 
   // ── Navigation shield plumbing ────────────────────────────────────────
 
-  bool get _shieldWanted => _mode != _Mode.idle || _stylusInRange;
+  /// The pager must stay frozen while any gesture is live, while a stylus
+  /// is in range, and for the WHOLE time the hand tool is selected (its
+  /// finger pans the canvas — it must never also scroll pages).
+  bool get _shieldWanted =>
+      _mode != _Mode.idle || _stylusInRange || tool.tool == ToolType.hand;
+
+  /// Re-evaluates the shield — also called when the hosting canvas swaps in
+  /// a new cold tool state (tool selection is a toolbar tap, long before
+  /// the next canvas pointer, so hand-tool selection freezes the pager
+  /// with zero gesture race).
+  void toolChanged() => _scheduleShield();
 
   void _scheduleShield() {
     final shield = navigationShield;

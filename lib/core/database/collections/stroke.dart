@@ -3,7 +3,9 @@ import 'package:isar/isar.dart';
 part 'stroke.g.dart';
 
 /// Which tool produced the ink. (Ordinal storage — append-only.)
-enum InkTool { pen, highlighter }
+/// `shape` strokes render as stroked polylines (crisp geometry) instead of
+/// pressure outlines — see [InkPainter].
+enum InkTool { pen, highlighter, shape }
 
 /// One vector stroke — the atomic unit of Nanote ink.
 ///

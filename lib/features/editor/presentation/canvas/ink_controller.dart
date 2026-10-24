@@ -204,6 +204,55 @@ class InkController extends ChangeNotifier {
   /// rewrites them to real ids inside its txn.
   int nextLocalId() => --_localIdCounter;
 
+  // ── Shapes (Notewise shape tool) ───────────────────────────────────
+
+  /// Ghost (uncommitted) shape strokes while the shape gesture is live.
+  /// Rendered by [InkPainter] exactly like committed ink; rebuilt each
+  /// pointer move (object identity changes — the Expando outline cache is
+  /// keyed by identity, so ghosts never poison it).
+  List<Stroke> shapePreview = const [];
+
+  /// Live shape gesture: replaces the ghost set with [polylines] sampled
+  /// by [sampleShape]. Arrow heads arrive as extra polylines and preview
+  /// (and later commit) together as ONE shape.
+  void previewShape(
+    List<List<StrokePoint>> polylines,
+    ToolPaletteState tool,
+  ) {
+    shapePreview = [
+      for (final pl in polylines)
+        strokeFromPoints(
+          pageId: pageId,
+          tool: InkTool.shape,
+          colorValue: tool.penColor.value,
+          baseWidth: tool.shapeSize,
+          points: pl,
+        )..id = nextLocalId(),
+    ];
+    notifyListeners();
+  }
+
+  /// Pen-up on a shape: all ghost strokes commit as ONE edit — one undo
+  /// step removes (or restores) the whole shape, arrow head included.
+  void endShape() {
+    final ghosts = shapePreview;
+    shapePreview = const [];
+    if (ghosts.isEmpty) {
+      notifyListeners();
+      return;
+    }
+    strokes.addAll(ghosts);
+    _pushEdit(StrokeEdit(removed: const <Stroke>[], inserted: ghosts));
+    editVersion++;
+    notifyListeners();
+  }
+
+  void cancelShape() {
+    if (shapePreview.isEmpty) return;
+    shapePreview = const [];
+    notifyListeners();
+  }
+
   // ── Erasing ──────────────────────────────────────────────────────────────
 
   Offset? _lastErasePos;

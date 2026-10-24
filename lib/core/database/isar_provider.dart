@@ -8,6 +8,7 @@ import 'collections/document.dart';
 import 'collections/folder.dart';
 import 'collections/note_page.dart';
 import 'collections/stroke.dart';
+import 'collections/text_block.dart';
 
 part 'isar_provider.g.dart';
 
@@ -27,6 +28,7 @@ Future<Isar> isar(Ref ref) async {
       DocumentSchema,
       NotePageSchema,
       StrokeSchema, // ← vector ink (Step 2)
+      TextBlockSchema, // ← text tool boxes (Notewise-parity update)
     ],
     directory: dir.path,
     name: 'nanote',

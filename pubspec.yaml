@@ -1,7 +1,7 @@
 name: nanote
 description: "Nanote — offline-first, vector-based note-taking. 100% local. No cloud. No AI."
 publish_to: "none"
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

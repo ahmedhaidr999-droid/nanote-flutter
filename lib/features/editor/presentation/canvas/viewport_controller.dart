@@ -86,9 +86,17 @@ class ViewportController extends ChangeNotifier {
     _set(m);
   }
 
-  /// Centers the full page inside [size] with [margin] (initial layout +
-  /// the harness "fit" button; the editor uses it in Step 5).
-  void fitToPage(Size size, {double margin = 24}) {
+  /// Current absolute zoom (screen px per page pt).
+  double get scale => _matrix.getMaxScaleOnAxis();
+
+  /// Centers the full page inside [size] with [margin]. [centerBias] shifts
+  /// the fitted page center (screen px) so reserved chrome (the Notewise
+  /// top/bottom pills) never covers fresh content on open.
+  void fitToPage(
+    Size size, {
+    double margin = 24,
+    Offset centerBias = Offset.zero,
+  }) {
     if (size.width <= 0 || size.height <= 0) return;
     final scale = math.max(
       minScale,
@@ -103,8 +111,53 @@ class ViewportController extends ChangeNotifier {
     final m = Matrix4.identity();
     m.setEntry(0, 0, scale);
     m.setEntry(1, 1, scale);
-    m.setEntry(0, 3, (size.width - pageWidth * scale) / 2);
-    m.setEntry(1, 3, (size.height - pageHeight * scale) / 2);
+    m.setEntry(0, 3, (size.width - pageWidth * scale) / 2 + centerBias.dx);
+    m.setEntry(1, 3, (size.height - pageHeight * scale) / 2 + centerBias.dy);
     _set(m);
+  }
+
+  /// Fits the page WIDTH into [size] (height flows past the screen edges —
+  /// vertical panning takes over), keeping the vertical center.
+  void fitToWidth(Size size, {double margin = 24}) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final scale = math.max(
+      minScale,
+      math.min(maxScale, (size.width - margin * 2) / pageWidth),
+    );
+    _zoomTo(scale, size, focalPage: Offset(pageWidth / 2, pageHeight / 2));
+  }
+
+  /// Sets the absolute zoom to [target] (clamped), keeping the canvas center
+  /// fixed — the zoom-menu actions (100%, +25%, −20%) route through here.
+  void setZoom(double target, Size size) =>
+      _zoomTo(target.clamp(minScale, maxScale), size);
+
+  /// Zooms keeping the page point under the canvas center pinned.
+  void _zoomTo(double target, Size size, {Offset? focalPage}) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final anchor =
+        focalPage ?? screenToPage(Offset(size.width / 2, size.height / 2));
+    _set(_computeZoomMatrix(target, anchor, matrix, size));
+  }
+
+  /// M′ = T(center) · S(target/current) · T(−anchorScreen) · M
+  /// — zooms about the anchor while its screen position stays put.
+  Matrix4 _computeZoomMatrix(
+    double target,
+    Offset anchorPage,
+    Matrix4 base,
+    Size size,
+  ) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final anchorScreen = MatrixUtils.transformPoint(base, anchorPage);
+    final ratio = base.getMaxScaleOnAxis() <= 0
+        ? 1.0
+        : target / base.getMaxScaleOnAxis();
+    final m = Matrix4.identity()
+      ..translate(center.dx, center.dy)
+      ..scale(ratio)
+      ..translate(-anchorScreen.dx, -anchorScreen.dy);
+    m.multiply(base);
+    return m;
   }
 }

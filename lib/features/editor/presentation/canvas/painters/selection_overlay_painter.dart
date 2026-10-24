@@ -44,11 +44,7 @@ class SelectionOverlayPainter extends CustomPainter {
       canvas.transform(combined.storage);
       for (final s in ink.strokes) {
         if (!selection.isSelected(s)) continue;
-        final o = ink.outlineOf(s);
-        final paint = InkPainter.paintFor(s.tool, s.colorValue);
-        canvas.drawPath(o.body, paint);
-        if (o.startRadius > 0) canvas.drawCircle(o.startCenter, o.startRadius, paint);
-        if (o.endRadius > 0) canvas.drawCircle(o.endCenter, o.endRadius, paint);
+        InkPainter.drawInkStroke(canvas, ink, s);
       }
       canvas.restore();
     }

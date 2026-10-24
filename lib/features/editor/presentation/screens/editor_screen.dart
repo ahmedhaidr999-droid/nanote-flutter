@@ -9,32 +9,32 @@ import '../../../../core/database/collections/note_page.dart';
 import '../../../library/data/library_providers.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../pdf/data/pdf_tile_cache.dart';
+import '../../domain/models/input_settings.dart';
 import '../../domain/models/tools.dart';
 import '../canvas/navigation_shield.dart';
+import '../widgets/editor_chrome.dart';
 import '../widgets/editor_page_view.dart';
-import '../widgets/editor_toolbar.dart';
+import '../widgets/page_thumbnails_panel.dart';
 
 /// The document editor: a virtualized vertical PageView of [EditorPageView]
-/// pages + floating chrome (app bar with undo/redo & page chip, Notewise
-/// style tool pill over the canvas).
+/// pages + the Notewise-style floating chrome (nav pill / tool pill /
+/// contextual sub-pill / page badge / edge arrows / thumbnails rail).
 ///
-/// Input ownership (v1.1 — the dual-gesture fix):
+/// Input ownership (v1.1 — the dual-gesture fix, kept intact):
 ///  • STYLUS / MOUSE write — they are excluded from the pager's drag
-///    devices (see [_EditorScrollBehavior]), so a pen stroke can never also
-///    scroll or flip pages;
-///  • a LONE FINGER navigates (native PageView drag with spring physics);
+///    devices, so a pen stroke can never also scroll or flip pages;
+///  • a LONE FINGER navigates (native PageView drag with spring physics)
+///    — EXCEPT while the hand tool is selected or finger-inking is enabled,
+///    when the pager admits NO drag device at all (see [_dragDevicesFor]);
 ///  • TWO FINGERS pinch/pan the page inside its canvas — for the duration
 ///    every page's router raises [NavigationShield], which freezes the
 ///    pager (killing any in-flight drag) and settles to the nearest page
 ///    when the gesture ends;
+///  • the HAND tool freezes the pager from the moment it is selected (the
+///    shield is raised on tool change — zero gesture race): its finger
+///    pans the canvas, never the pages;
 ///  • palm touches are ignored outright (policy) or rest inert (router),
 ///    and the shield keeps them from flipping pages while the pen works.
-///
-/// Virtualization: PageView keeps only the visible page + neighbors alive
-/// (`allowImplicitScrolling`) — every other page's ink, PDF raster and
-/// controllers simply do not exist while off-screen. Undo state persists
-/// for the current page and its neighbors; beyond that, undo history
-/// intentionally resets (per-page undo, GoodNotes behaviour).
 ///
 /// Persistence needs NO save button: each page's InkController owns a
 /// serialized DB queue that flushes stroke edits as they happen. On close
@@ -49,9 +49,10 @@ class EditorScreen extends ConsumerStatefulWidget {
 }
 
 class _EditorScreenState extends ConsumerState<EditorScreen> {
-  /// Page fit leaves this much free below the page so the floating pill
-  /// never covers fresh content (pill 64 + gap + safe-area ≈ 100).
-  static const double _bottomChromeReserve = 100;
+  /// Floating chrome reserves — the initial page fit keeps fresh content
+  /// clear of the top pills and the bottom page badge.
+  static const double _topChromeReserve = 128;
+  static const double _bottomChromeReserve = 76;
 
   /// iOS-feel page snapping on every platform: bouncy edges + a spring
   /// settle (the Android default clamp is what made turns feel mechanical).
@@ -69,6 +70,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   /// OR-merge of every mounted page's "freeze the pager" demand.
   late final NavigationShield _shield = NavigationShield();
   bool _shieldActive = false;
+
+  /// Chrome visibility.
+  bool _readMode = false;
+  bool _thumbsOpen = false;
 
   @override
   void initState() {
@@ -226,6 +231,45 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     ).whenComplete(controller.dispose);
   }
 
+  // ── Zoom actions (operate on the CURRENT page's viewport) ────────────────
+
+  PageControllers? get _currentControllers {
+    final doc = ref.read(libraryDocumentProvider(widget.documentId)).value;
+    final pages =
+        ref.read(documentPagesProvider(widget.documentId)).value ?? const [];
+    if (pages.isEmpty) return null;
+    final page = pages[_pageIndex.clamp(0, pages.length - 1)];
+    return _controllersByPage[page.id];
+  }
+
+  Size? get _canvasSize => _currentControllers?.viewport.canvasSize;
+
+  void _fitPage() {
+    final c = _currentControllers;
+    final size = _canvasSize;
+    if (c == null || size == null || size == Size.zero) return;
+    c.viewport.fitToPage(
+      Size(size.width,
+          size.height - _topChromeReserve - _bottomChromeReserve),
+      margin: 16,
+      centerBias: const Offset(0, _topChromeReserve),
+    );
+  }
+
+  void _fitWidth() {
+    final c = _currentControllers;
+    final size = _canvasSize;
+    if (c == null || size == null || size == Size.zero) return;
+    c.viewport.fitToWidth(size, margin: 24);
+  }
+
+  void _setZoom(double target) {
+    final c = _currentControllers;
+    final size = _canvasSize;
+    if (c == null || size == null || size == Size.zero) return;
+    c.viewport.setZoom(target, size);
+  }
+
   // ── Build ────────────────────────────────────────────────────────────────
 
   @override
@@ -233,6 +277,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final docAsync = ref.watch(libraryDocumentProvider(widget.documentId));
     final pagesAsync = ref.watch(documentPagesProvider(widget.documentId));
     final tool = ref.watch(toolPaletteProvider);
+    final input = ref.watch(inputSettingsProvider);
 
     final doc = docAsync.value;
     final pages = pagesAsync.value ?? const <NotePage>[];
@@ -278,7 +323,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         }
 
         return ScrollConfiguration(
-          behavior: const _EditorScrollBehavior(),
+          behavior: _EditorScrollBehavior(_dragDevicesFor(tool, input)),
           child: PageView.builder(
             controller: _pageController,
             physics: _shieldActive
@@ -299,6 +344,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               page: pages[i],
               tool: tool,
               navigationShield: _shield,
+              fitTopInset: _topChromeReserve,
               fitBottomInset: _bottomChromeReserve,
               onControllersReady: (c) => _onControllersReady(pages[i], c),
             ),
@@ -317,30 +363,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          doc?.title ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          _UndoRedoButtons(controllers: controllers),
-          if (pages.length > 1)
-            _PageChip(
-              index: _pageIndex.clamp(0, pages.length - 1),
-              count: pages.length,
-              onPrev: () => _goToPage(
-                _pageIndex.clamp(0, pages.length - 1) - 1,
-                pages.length,
-              ),
-              onNext: () => _goToPage(
-                _pageIndex.clamp(0, pages.length - 1) + 1,
-                pages.length,
-              ),
-              onJump: () => _showJumpDialog(pages.length),
-            ),
-        ],
-      ),
+      // No AppBar — the whole editor is floating Notewise chrome over a
+      // full-bleed canvas (see the Stack below).
       body: ColoredBox(
         // Workspace color — pages float on it (BackdropPainter adds the
         // shadow); doubles as the loading/empty-state background.
@@ -348,53 +372,168 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         child: Stack(
           children: [
             Positioned.fill(child: scaffoldBody),
-            // Floating chrome over the reading surface (Notewise style).
-            SafeArea(
-              top: false,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  child: EditorToolbar(
-                    controllers: controllers,
-                    isPdf: doc?.type == DocumentType.pdf,
-                    onFit: () {
-                      final c = controllers;
-                      if (c == null) return;
-                      // Fits the VISIBLE canvas minus the floating chrome —
-                      // EditorPageView records the exact laid-out size.
-                      final size = c.viewport.canvasSize;
-                      if (size != null && size != Size.zero) {
-                        c.viewport.fitToPage(
-                          Size(size.width,
-                              size.height - _bottomChromeReserve),
-                          margin: 24,
-                        );
-                      }
-                    },
-                    onAddPage:
-                        doc == null ? null : () => _addPage(doc, pages.length),
+
+            // ── Thumbnails rail + scrim ────────────────────────────────
+            if (doc != null && pages.isNotEmpty) ...[
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_thumbsOpen,
+                  child: AnimatedOpacity(
+                    opacity: _thumbsOpen ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _thumbsOpen = false),
+                      child: const ColoredBox(
+                        color: Color(0x42000000),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+              Positioned.fill(
+                right: null,
+                child: AnimatedSlide(
+                  offset: _thumbsOpen ? Offset.zero : const Offset(-1, 0),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: SafeArea(
+                    child: PageThumbnailsPanel(
+                      document: doc,
+                      pages: pages,
+                      currentIndex:
+                          _pageIndex.clamp(0, pages.length - 1),
+                      onSelect: (i) {
+                        setState(() => _thumbsOpen = false);
+                        _goToPage(i, pages.length);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            // ── Top chrome (nav pill · tool pill · context pill · eye) ──
+            if (!_readMode)
+              Positioned(
+                left: 12,
+                top: 0,
+                right: 12,
+                child: SafeArea(
+                  bottom: false,
+                  child: EditorTopChrome(
+                    controllers: controllers,
+                    onBack: () => Navigator.of(context).maybePop(),
+                    onThumbnails: () =>
+                        setState(() => _thumbsOpen = !_thumbsOpen),
+                    onAddPage:
+                        (doc != null && doc.type == DocumentType.notebook)
+                            ? () => _addPage(doc, pages.length)
+                            : null,
+                    onToggleReadMode: () => setState(() => _readMode = true),
+                    onOpenSettings: () => showTouchSettingsSheet(context),
+                  ),
+                ),
+              )
+            else
+              Positioned(
+                top: 12,
+                right: 12,
+                child: SafeArea(
+                  bottom: false,
+                  child: ReadModeExitPill(
+                    onExit: () => setState(() => _readMode = false),
+                  ),
+                ),
+              ),
+
+            // ── Page badge (bottom-left, Notewise "28 / 28 | 233%") ────
+            if (!_readMode)
+              Positioned(
+                left: 12,
+                bottom: 12,
+                child: SafeArea(
+                  top: false,
+                  child: EditorPageBadge(
+                    controllers: controllers,
+                    index: _pageIndex.clamp(0, pages.isEmpty ? 0 : pages.length - 1),
+                    count: pages.isEmpty ? 1 : pages.length,
+                    onPrev: () => _goToPage(
+                      _pageIndex.clamp(0, pages.length - 1) - 1,
+                      pages.length,
+                    ),
+                    onNext: () => _goToPage(
+                      _pageIndex.clamp(0, pages.length - 1) + 1,
+                      pages.length,
+                    ),
+                    onJump: () => _showJumpDialog(pages.length),
+                    onFitPage: _fitPage,
+                    onFitWidth: _fitWidth,
+                    onZoom100: () => _setZoom(1.0),
+                    onZoomIn: () => _setZoom(
+                        (controllers?.viewport.scale ?? 1.0) * 1.25),
+                    onZoomOut: () => _setZoom(
+                        (controllers?.viewport.scale ?? 1.0) / 1.25),
+                  ),
+                ),
+              ),
+
+            // ── Right-edge page arrows ─────────────────────────────────
+            if (!_readMode)
+              Positioned(
+                right: 8,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: SafeArea(
+                    child: EditorEdgeNav(
+                      index: _pageIndex.clamp(0, pages.isEmpty ? 0 : pages.length - 1),
+                      count: pages.length,
+                      onPrev: () => _goToPage(
+                        _pageIndex.clamp(0, pages.length - 1) - 1,
+                        pages.length,
+                      ),
+                      onNext: () => _goToPage(
+                        _pageIndex.clamp(0, pages.length - 1) + 1,
+                        pages.length,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
+
+  /// Which pointer devices may drive the pager:
+  ///
+  ///  • normally, TOUCH ONLY (stylus/mouse are ink pointers);
+  ///  • NOTHING while the hand tool is selected (its finger pans the
+  ///    canvas) or while finger-inking is enabled (a drawing finger must
+  ///    never also scroll pages) — the router owns those touches instead.
+  Set<PointerDeviceKind> _dragDevicesFor(
+    ToolPaletteState tool,
+    InputSettingsState input,
+  ) {
+    if (tool.tool == ToolType.hand || input.allowFingerDrawing) {
+      return const <PointerDeviceKind>{};
+    }
+    return const <PointerDeviceKind>{PointerDeviceKind.touch};
+  }
 }
 
-/// FINGERS ONLY drive the pager. Stylus and mouse pointers are INK pointers —
-/// admitting them here is exactly what made a pen stroke scroll the page it
-/// was writing on. (Trackpads still scroll via their native events.)
+/// Fingers (usually) drive the pager. Stylus and mouse pointers are INK
+/// pointers — admitting them here is exactly what made a pen stroke scroll
+/// the page it was writing on. (Trackpads still scroll via their native
+/// events.) While the hand tool / finger-inking owns touch, NO device can
+/// drag the pager — see [_EditorScreenState._dragDevicesFor].
 class _EditorScrollBehavior extends ScrollBehavior {
-  const _EditorScrollBehavior();
+  const _EditorScrollBehavior(this.dragDevices);
 
   @override
-  Set<PointerDeviceKind> get dragDevices => const {
-        PointerDeviceKind.touch,
-      };
+  final Set<PointerDeviceKind> dragDevices;
 
   @override
   Widget buildScrollbar(
@@ -403,141 +542,4 @@ class _EditorScrollBehavior extends ScrollBehavior {
     ScrollableDetails details,
   ) =>
       child; // no scrollbar over the reading surface
-}
-
-/// Undo/redo for the CURRENT page only, live via AnimatedBuilder on the
-/// page's InkController (no widget rebuilds from the 120Hz ink stream).
-class _UndoRedoButtons extends StatelessWidget {
-  const _UndoRedoButtons({required this.controllers});
-
-  final PageControllers? controllers;
-
-  @override
-  Widget build(BuildContext context) {
-    final ink = controllers?.ink;
-    if (ink == null) {
-      return const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(onPressed: null, icon: Icon(Icons.undo_outlined)),
-          IconButton(onPressed: null, icon: Icon(Icons.redo_outlined)),
-        ],
-      );
-    }
-    return AnimatedBuilder(
-      animation: ink,
-      builder: (context, _) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Undo',
-            onPressed: ink.canUndo ? ink.undo : null,
-            icon: const Icon(Icons.undo_outlined),
-          ),
-          IconButton(
-            tooltip: 'Redo',
-            onPressed: ink.canRedo ? ink.redo : null,
-            icon: const Icon(Icons.redo_outlined),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Compact "‹ 3 / 24 ›" page indicator in the app bar — the chevrons step
-/// sequentially, the middle opens the jump-to-page dialog (precision in
-/// 1000-page documents).
-class _PageChip extends StatelessWidget {
-  const _PageChip({
-    required this.index,
-    required this.count,
-    required this.onPrev,
-    required this.onNext,
-    required this.onJump,
-  });
-
-  final int index;
-  final int count;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-  final VoidCallback onJump;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Chevron(
-            icon: Icons.expand_less,
-            tooltip: 'Previous page',
-            onTap: index > 0 ? onPrev : null,
-          ),
-          InkWell(
-            borderRadius: BorderRadius.circular(22),
-            onTap: onJump,
-            child: Tooltip(
-              message: 'Go to page…',
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  '${index + 1} / $count',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
-            ),
-          ),
-          _Chevron(
-            icon: Icons.expand_more,
-            tooltip: 'Next page',
-            onTap: index < count - 1 ? onNext : null,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Chevron extends StatelessWidget {
-  const _Chevron({
-    required this.icon,
-    required this.tooltip,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 34,
-      height: 40,
-      child: IconButton(
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        iconSize: 20,
-        tooltip: tooltip,
-        onPressed: onTap,
-        icon: Icon(
-          icon,
-          color: onTap == null
-              ? scheme.onSurfaceVariant.withOpacity(0.38)
-              : scheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
 }

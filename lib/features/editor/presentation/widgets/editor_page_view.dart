@@ -4,16 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/database/collections/document.dart';
 import '../../../../core/database/collections/note_page.dart';
 import '../../data/stroke_repository.dart';
+import '../../data/text_repository.dart';
 import '../../domain/models/input_settings.dart';
 import '../../domain/models/tools.dart';
 import '../canvas/ink_canvas.dart';
 import '../canvas/ink_controller.dart';
 import '../canvas/input_policy.dart';
 import '../canvas/navigation_shield.dart';
+import '../canvas/painters/text_block_painter.dart';
 import '../canvas/selection_controller.dart';
+import '../canvas/text_layer_controller.dart';
 import '../canvas/viewport_controller.dart';
 import '../../../pdf/data/pdf_document_service.dart';
 import '../../../pdf/presentation/pdf_layer.dart';
+import 'text_block_editor_sheet.dart';
 
 /// The controllers a hosting editor toolbar needs for ONE page.
 class PageControllers {
@@ -33,9 +37,10 @@ class PageControllers {
 /// out in its virtualized page scroller.
 ///
 /// Lifecycle per page:
-///  • creates its own [InkController] wired to the Stroke repository and
-///    hydrates ONLY this page's ink (opening a 1000-page textbook loads one
-///    page's strokes, never the whole book);
+///  • creates its own [InkController] wired to the Stroke repository (and
+///    a [TextLayerController] wired to the TextBlock repository) and
+///    hydrates ONLY this page's content — opening a 1000-page textbook
+///    loads one page, never the whole book);
 ///  • PDFs additionally retain the shared, refcounted document handle —
 ///    many page views share ONE native parse; the last release closes it
 ///    and frees the tile cache;
@@ -43,10 +48,6 @@ class PageControllers {
 ///
 /// Use with `key: ValueKey(page.id)` so the widget recycles cleanly when
 /// the host switches pages.
-///
-/// This replaces Step-4's PdfPageView: notebooks (pdfPath == null) get the
-/// same controller stack minus the PDF layer, and paper template/shade now
-/// resolve from per-page overrides falling back to document defaults.
 class EditorPageView extends ConsumerStatefulWidget {
   const EditorPageView({
     super.key,
@@ -56,6 +57,7 @@ class EditorPageView extends ConsumerStatefulWidget {
     this.onControllersReady,
     this.navigationShield,
     this.fitBottomInset = 0,
+    this.fitTopInset = 0,
   });
 
   final Document document;
@@ -67,9 +69,10 @@ class EditorPageView extends ConsumerStatefulWidget {
   /// editor owns the instance so every mounted page ORs into the same bit.
   final NavigationShield? navigationShield;
 
-  /// Height (screen px) the initial fit must leave free below the page so
-  /// the floating tool pill never covers freshly-opened page content.
+  /// Height (screen px) the initial fit must leave free below/above the
+  /// page so the floating chrome never covers freshly-opened content.
   final double fitBottomInset;
+  final double fitTopInset;
 
   @override
   ConsumerState<EditorPageView> createState() => _EditorPageViewState();
@@ -79,6 +82,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
   InkController? _ink;
   ViewportController? _viewport;
   SelectionController? _selection;
+  TextLayerController? _text;
   bool _fitted = false;
   bool _retained = false;
   bool _disposed = false;
@@ -93,6 +97,9 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     final persistence = await ref.read(strokeRepositoryProvider.future);
     if (_disposed) return;
 
+    final textPersistence = await ref.read(textRepositoryProvider.future);
+    if (_disposed) return;
+
     final ink = InkController(
       persistence: persistence,
       pageId: widget.page.id,
@@ -102,6 +109,10 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
       pageHeight: widget.page.height,
     );
     final selection = SelectionController(ink: ink, viewport: viewport);
+    final text = TextLayerController(
+      persistence: textPersistence,
+      pageId: widget.page.id,
+    );
 
     // PDF pages additionally hold the shared document handle.
     final pdfPath = widget.document.pdfPath;
@@ -113,6 +124,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
         // tear down and stop.
         await ref.read(pdfDocumentServiceProvider).release(pdfPath);
         selection.dispose();
+        text.dispose();
         ink.dispose();
         viewport.dispose();
         return;
@@ -126,6 +138,18 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
         await ref.read(pdfDocumentServiceProvider).release(pdfPath!);
       }
       selection.dispose();
+      text.dispose();
+      ink.dispose();
+      viewport.dispose();
+      return;
+    }
+    await text.hydrate();
+    if (_disposed) {
+      if (_retained) {
+        await ref.read(pdfDocumentServiceProvider).release(pdfPath!);
+      }
+      selection.dispose();
+      text.dispose();
       ink.dispose();
       viewport.dispose();
       return;
@@ -134,6 +158,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     _ink = ink;
     _viewport = viewport;
     _selection = selection;
+    _text = text;
     if (mounted) setState(() {});
     widget.onControllersReady?.call(
       PageControllers(ink: ink, viewport: viewport, selection: selection),
@@ -149,6 +174,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
       ref.read(pdfDocumentServiceProvider).release(pdfPath);
     }
     _selection?.dispose();
+    _text?.dispose();
     _ink?.dispose();
     _viewport?.dispose();
     super.dispose();
@@ -159,6 +185,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     final ink = _ink;
     final viewport = _viewport;
     final selection = _selection;
+    final text = _text;
     if (ink == null || viewport == null || selection == null) {
       return const SizedBox.expand(); // Isar (+ PDF handle) still opening
     }
@@ -168,6 +195,7 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     final page = widget.page;
     final pdfPath = doc.pdfPath;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tool = widget.tool;
 
     return LayoutBuilder(builder: (context, constraints) {
       final size = constraints.biggest;
@@ -176,8 +204,13 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
         viewport.canvasSize = size;
         WidgetsBinding.instance.addPostFrameCallback(
           (_) => viewport.fitToPage(
-            Size(size.width, size.height - widget.fitBottomInset),
+            Size(size.width,
+                size.height - widget.fitTopInset - widget.fitBottomInset),
             margin: 16,
+            // Shift the fitted box DOWN so the page sits centered in the
+            // free area BETWEEN the top pills and the bottom badge (the
+            // box itself starts at the canvas top edge).
+            centerBias: Offset(0, widget.fitTopInset),
           ),
         );
       } else if (size != Size.zero && viewport.canvasSize != size) {
@@ -186,8 +219,9 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
       return InkCanvas(
         controller: ink,
         viewport: viewport,
-        tool: widget.tool,
+        tool: tool,
         selection: selection,
+        text: text,
         policy: PalmRejectionPolicy(
           enabled: input.palmRejection,
           allowFingerDrawing: input.allowFingerDrawing,
@@ -209,6 +243,30 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
                 viewport: viewport,
                 devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
               ),
+        textLayer: CustomPaint(
+          painter: TextBlockPainter(controller: text, viewport: viewport),
+          child: const SizedBox.expand(),
+        ),
+        onCreateText: (pagePoint) {
+          if (!mounted) return;
+          showTextBlockEditorSheet(
+            context,
+            controller: text,
+            createAt: pagePoint,
+            defaultSize: tool.textSize,
+            defaultColor: tool.textColor,
+          );
+        },
+        onEditText: (block) {
+          if (!mounted) return;
+          showTextBlockEditorSheet(
+            context,
+            controller: text,
+            editing: block,
+            defaultSize: tool.textSize,
+            defaultColor: tool.textColor,
+          );
+        },
         overlayAccentColor: Theme.of(context).colorScheme.primary,
       );
     });
