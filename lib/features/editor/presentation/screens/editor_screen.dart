@@ -59,7 +59,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     super.dispose();
   }
 
-  void Function()? _inkListenerFor(PageControllers controllers) {
+  void Function() _inkListenerFor(PageControllers controllers) {
     return () {
       if (controllers.ink.canUndo) _edited = true;
     };

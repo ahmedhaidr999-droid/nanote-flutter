@@ -9,6 +9,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/database/collections/document.dart';
 import '../../../core/database/collections/folder.dart';
 import '../../../core/database/collections/note_page.dart';
+import '../../../core/database/collections/stroke.dart';
 import '../../../core/database/isar_provider.dart';
 import '../../../core/utils/path_helpers.dart';
 import '../domain/library_models.dart';
@@ -177,7 +178,7 @@ class LibraryRepository {
   Future<bool> moveFolder(Folder folder, int? newParentId) async {
     if (newParentId == folder.id) return false;
     if (newParentId != null) {
-      var cursor = newParentId;
+      int? cursor = newParentId; // nullable: the walk may reach the root
       while (cursor != null) {
         if (cursor == folder.id) return false;
         final row = await _isar.folders.get(cursor);
@@ -219,12 +220,12 @@ class LibraryRepository {
     for (final doc in docs) {
       await deleteDocument(doc);
     }
-    await _isar.writeTxn(() => _isar.folders.deleteAllByIds(folderIds));
+    await _isar.writeTxn(() => _isar.folders.deleteAll(folderIds));
   }
 
   /// All folders (move picker tree). Name order for stable tree display.
   Future<List<Folder>> allFolders() =>
-      _isar.folders.filter().sortByName().findAll();
+      _isar.folders.where().sortByName().findAll();
 
   // ── Documents ──────────────────────────────────────────────────────────────
 
@@ -299,7 +300,7 @@ class LibraryRepository {
             .anyOf(pageIds, (q, int id) => q.pageIdEqualTo(id))
             .deleteAll();
       }
-      await _isar.notePages.deleteAllByIds(pageIds);
+      await _isar.notePages.deleteAll(pageIds);
       await _isar.documents.delete(doc.id);
     });
 

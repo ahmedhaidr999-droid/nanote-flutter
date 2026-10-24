@@ -41,7 +41,7 @@ class IsarStrokeRepository implements InkPersistence {
     await _isar.writeTxn(() async {
       final ids = <int>[for (final s in removed) if (s.id > 0) s.id];
       if (ids.isNotEmpty) {
-        await _isar.strokes.deleteAllByIds(ids);
+        await _isar.strokes.deleteAll(ids);
       }
       if (inserted.isNotEmpty) {
         for (final s in inserted) {
