@@ -1,0 +1,78 @@
+name: nanote
+description: "Nanote — offline-first, vector-based note-taking. 100% local. No cloud. No AI."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── State management ──────────────────────────────────────────────────────
+  # Riverpod 2.x with strict code generation: compile-safe providers,
+  # auto-dispose semantics, no stringly-typed lookups.
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # ── Local database ────────────────────────────────────────────────────────
+  # Isar: embedded, fully offline, index-driven. The home screen must stay
+  # instant with thousands of documents — every hot query gets an index.
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+
+  # ── PDF engine ────────────────────────────────────────────────────────────
+  # pdfx renders each PDF page into a raster that we composite UNDER our
+  # CustomPainter, inside ONE shared transform. We keep total ownership of
+  # the gesture pipeline (stylus vs finger, palm rejection) — a packaged
+  # viewer (e.g. Syncfusion) owns its own gestures and would fight ours.
+  pdfx: ^2.6.0
+
+  # ── System file picking (PDF import) ──────────────────────────────────────
+  file_picker: ^8.0.6
+
+  # ── Navigation ────────────────────────────────────────────────────────────
+  # Declarative routes: /library, /library/f/:folderId (push-nested), /editor/:docId
+  go_router: ^14.2.0
+
+  # ── Filesystem ────────────────────────────────────────────────────────────
+  path_provider: ^2.1.3
+  path: ^1.9.0
+
+  # ── Immutable value models (tools, canvas state) ─────────────────────────
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # ── Utilities ─────────────────────────────────────────────────────────────
+  uuid: ^4.4.0 # stable file names for imported PDFs & thumbnails
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+  # Code generation pipeline
+  # NOTE: riverpod_lint + custom_lint intentionally omitted for CI builds —
+  # custom_lint's analyzer requirement conflicts with isar_generator (<6.0.0).
+  build_runner: ^2.4.11
+  riverpod_generator: ^2.4.3
+  isar_generator: ^3.1.0+1
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+
+  # App icon: solid blue rounded square, thick white 'N',
+  # detached white dot atop the left stem (see assets/icon — Step 5).
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/nanote_icon.png"
+  adaptive_icon_background: "#155EEF"
+  adaptive_icon_foreground: "assets/icon/nanote_icon_foreground.png"
