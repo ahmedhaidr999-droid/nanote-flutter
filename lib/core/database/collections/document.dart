@@ -72,10 +72,7 @@ class Document {
     this.pageCount = 0,
     this.pinned = false,
     this.sortIndex = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  });
 }
 
 enum DocumentType { notebook, pdf }

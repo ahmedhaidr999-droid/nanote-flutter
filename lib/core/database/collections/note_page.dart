@@ -38,10 +38,29 @@ class NotePage {
   double height = 841.89;
 
   /// Optional per-page paper override (`null` → inherit document defaults).
-  @enumerated
-  PaperTemplate? templateOverride;
-  @enumerated
-  PaperShade? shadeOverride;
+  ///
+  /// Isar 3.1.0+1 cannot persist NULLABLE ENUMS (its generator maps enums to
+  /// a non-nullable byte), so the override is stored as an enum ordinal int
+  /// and exposed through typed, auto-ignored accessors below.
+  int? templateOverrideOrdinal;
+  int? shadeOverrideOrdinal;
+
+  /// Typed views over the stored ordinals — auto-ignored by isar_generator
+  /// (getters/setters are never persisted), so the domain layer keeps the
+  /// original `PaperTemplate?` ergonomics: `page.templateOverride ?? doc.…`.
+  @ignore
+  PaperTemplate? get templateOverride => templateOverrideOrdinal == null
+      ? null
+      : PaperTemplate.values[templateOverrideOrdinal!];
+  @ignore
+  set templateOverride(PaperTemplate? value) =>
+      templateOverrideOrdinal = value?.index;
+  @ignore
+  PaperShade? get shadeOverride => shadeOverrideOrdinal == null
+      ? null
+      : PaperShade.values[shadeOverrideOrdinal!];
+  @ignore
+  set shadeOverride(PaperShade? value) => shadeOverrideOrdinal = value?.index;
 
   DateTime createdAt = DateTime.now();
   DateTime updatedAt = DateTime.now();
@@ -53,10 +72,5 @@ class NotePage {
     this.pdfPageNumber,
     this.width = 595.28,
     this.height = 841.89,
-    this.templateOverride,
-    this.shadeOverride,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  });
 }

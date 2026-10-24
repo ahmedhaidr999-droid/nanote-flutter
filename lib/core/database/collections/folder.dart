@@ -39,8 +39,5 @@ class Folder {
     this.parentId,
     this.colorValue = 0xFF155EEF,
     this.sortIndex = 0,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  });
 }
