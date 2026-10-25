@@ -9,6 +9,7 @@ import '../../../../core/database/collections/document.dart';
 import '../../../../core/database/collections/note_page.dart';
 import '../../../library/data/library_providers.dart';
 import '../../../library/data/library_repository.dart';
+import '../../../pdf/data/pdf_document_service.dart';
 import '../../../pdf/data/pdf_tile_cache.dart';
 import '../../data/export_service.dart';
 import '../../data/stroke_repository.dart';

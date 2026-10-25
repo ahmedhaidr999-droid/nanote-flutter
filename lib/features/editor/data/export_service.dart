@@ -7,15 +7,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 
-import '../../../../core/database/collections/document.dart';
-import '../../../../core/database/collections/note_page.dart';
-import '../../../../core/database/collections/stroke.dart';
-import '../../../../core/database/collections/text_block.dart';
-import '../../../pdf/data/pdf_document_service.dart';
-import '../../domain/geometry/ink_geometry.dart';
-import '../../domain/models/stroke_codec.dart';
-import '../canvas/ink_controller.dart';
-import '../canvas/painters/ink_painter.dart';
+import '../../../core/database/collections/document.dart';
+import '../../../core/database/collections/note_page.dart';
+import '../../../core/database/collections/stroke.dart';
+import '../../../core/database/collections/text_block.dart';
+import '../../pdf/data/pdf_document_service.dart';
+import '../domain/geometry/ink_geometry.dart';
+import '../domain/models/stroke_codec.dart';
+import '../presentation/canvas/ink_controller.dart';
+import '../presentation/canvas/painters/ink_painter.dart';
 
 /// Offline document export (XNota parity) — 100% local, no cloud:
 ///  • **Export as PDF** — every page rebuilt as a vector PDF page:
@@ -115,7 +115,7 @@ class ExportService {
         doc,
         pageFormat: PdfPageFormat(pageW, pageH),
       );
-      final canvas = pdfPage.getCanvas();
+      final canvas = pdfPage.getGraphics();
 
       // 1. Background. Notebooks get their paper template; imported PDFs
       //    get a white base (the embedded raster covers the page).
