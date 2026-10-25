@@ -330,7 +330,7 @@ class ExportService {
   // ── PDF drawing primitives (bottom-left origin!) ────────────────────────
 
   void _pdfDrawPaper(
-    PdfCanvas canvas,
+    PdfGraphics canvas,
     double w,
     double h,
     PaperTemplate template,
@@ -399,7 +399,7 @@ class ExportService {
     }
   }
 
-  void _pdfDrawStroke(PdfCanvas canvas, double pageH, Stroke s) {
+  void _pdfDrawStroke(PdfGraphics canvas, double pageH, Stroke s) {
     final pts = s.readPoints();
     if (pts.isEmpty) return;
 
@@ -532,7 +532,7 @@ class ExportService {
   }
 
   void _pdfDrawTextBlock(
-    PdfCanvas canvas,
+    PdfGraphics canvas,
     PdfFont font,
     double pageH,
     TextBlock b,
@@ -553,7 +553,7 @@ class ExportService {
     }
 
     // Fill color also drives drawString's glyphs (pdf 3.10 text painting
-    // uses the active fill color — see PdfCanvas.drawString).
+    // uses the active fill color — see PdfGraphics.drawString).
     canvas.setFillColor(_pdfColorOf(b.colorValue));
     final lines = b.content.split('\n');
     for (var i = 0; i < lines.length; i++) {
