@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/database/collections/text_block.dart';
+import '../../domain/models/tools.dart';
 import '../canvas/text_layer_controller.dart';
 
-/// Notewise-style text block editor: a bottom sheet with the content field,
-/// font-size presets, ink swatches and (for existing blocks) delete.
+/// XNota-style text block editor: a bottom sheet with the content field,
+/// font-size presets, ink swatches, a sticky-note toggle (with its palette)
+/// and (for existing blocks) delete.
 ///
 ///  • NEW blocks: [editing] null, [createAt] required — Save inserts with
-///    the text tool's current defaults ([defaultSize], [defaultColor]).
+///    the text tool's current defaults ([defaultSize], [defaultColor]);
+///    [stickyDefault]/[stickyColorDefault] pre-armed the sticky toggle when
+///    the text tool's "sticky mode" chip is active.
 ///  • EXISTING blocks: [editing] required — Save updates, Delete removes.
 ///
 /// Text edits persist immediately (their own lifecycle — text blocks are
@@ -19,6 +23,8 @@ Future<void> showTextBlockEditorSheet(
   Offset? createAt,
   double defaultSize = 16,
   Color defaultColor = const Color(0xFF111827),
+  bool stickyDefault = false,
+  Color stickyColorDefault = const Color(0xFFFFF3A3),
 }) {
   assert(editing != null || createAt != null,
       'Either an existing block or a creation anchor is required.');
@@ -34,6 +40,12 @@ Future<void> showTextBlockEditorSheet(
       var color = editing != null
           ? Color(editing.colorValue)
           : defaultColor;
+      var sticky = editing != null
+          ? editing.stickyColorValue != 0
+          : stickyDefault;
+      var stickyColor = editing != null && editing.stickyColorValue != 0
+          ? Color(editing.stickyColorValue)
+          : stickyColorDefault;
 
       return Padding(
         padding: EdgeInsets.only(
@@ -51,7 +63,9 @@ Future<void> showTextBlockEditorSheet(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isEditing ? 'Edit text' : 'New text',
+                  isEditing
+                      ? (sticky ? 'Edit sticky note' : 'Edit text')
+                      : (sticky ? 'New sticky note' : 'New text'),
                   style: Theme.of(sheetContext2).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
@@ -100,6 +114,34 @@ Future<void> showTextBlockEditorSheet(
                       ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  secondary: const Icon(Icons.sticky_note_2_outlined),
+                  title: const Text('Sticky note'),
+                  subtitle:
+                      const Text('A colored swatch behind the text'),
+                  value: sticky,
+                  onChanged: (v) => setSheetState(() => sticky = v),
+                ),
+                if (sticky) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      for (final swatch in kStickySwatches)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: _SheetSwatch(
+                            color: swatch,
+                            selected: swatch == stickyColor,
+                            onTap: () =>
+                                setSheetState(() => stickyColor = swatch),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -130,7 +172,8 @@ Future<void> showTextBlockEditorSheet(
                           existing
                             ..content = content
                             ..fontSize = fontSize
-                            ..colorValue = color.value;
+                            ..colorValue = color.value
+                            ..stickyColorValue = sticky ? stickyColor.value : 0;
                           controller.persistBlock(existing);
                         } else {
                           controller.createBlock(
@@ -138,6 +181,7 @@ Future<void> showTextBlockEditorSheet(
                             content: content,
                             fontSize: fontSize,
                             colorValue: color.value,
+                            stickyColorValue: sticky ? stickyColor.value : 0,
                           );
                         }
                       },
@@ -154,7 +198,7 @@ Future<void> showTextBlockEditorSheet(
   );
 }
 
-/// Text-tool swatches (Notewise's text palette: near-black + basics).
+/// Text-tool swatches (XNota's text palette: near-black + basics).
 const kTextInkSwatches = [
   Color(0xFF111827), // ink black
   Color(0xFF155EEF), // brand blue

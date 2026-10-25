@@ -35,6 +35,31 @@ class TextBlockPainter extends CustomPainter {
         continue;
       }
 
+      // Sticky-note background — a rounded, shadowed swatch with breathing
+      // room around the glyphs (XNota-style sticky).
+      if (b.stickyColorValue != 0) {
+        final pad = 9.0 * scale;
+        final bgRect = Rect.fromLTRB(
+          screenBox.left - pad,
+          screenBox.top - pad,
+          screenBox.right + pad,
+          screenBox.bottom + pad,
+        );
+        final rRadius = 6.0 * scale;
+        final bgRRect = RRect.fromRectAndRadius(bgRect, Radius.circular(rRadius));
+        canvas.drawRRect(
+          bgRRect.shift(Offset(0, 2.5 * scale)),
+          Paint()
+            ..color = const Color(0x26000000)
+            ..maskFilter =
+                MaskFilter.blur(BlurStyle.normal, 4.0 * scale),
+        );
+        canvas.drawRRect(
+          bgRRect,
+          Paint()..color = Color(b.stickyColorValue),
+        );
+      }
+
       final tp = TextPainter(
         text: TextSpan(
           text: b.content,

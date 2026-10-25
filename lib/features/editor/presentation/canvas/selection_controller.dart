@@ -328,6 +328,8 @@ class SelectionController extends ChangeNotifier {
         tool: s.tool,
         colorValue: s.colorValue,
         baseWidth: s.baseWidth,
+        styleValue: s.styleValue,
+        opacity: s.opacity,
         points: pts,
       )..id = ink.nextLocalId());
     }
@@ -352,6 +354,8 @@ class SelectionController extends ChangeNotifier {
           ..tool = s.tool
           ..colorValue = colorValue
           ..baseWidth = s.baseWidth
+          ..styleValue = s.styleValue
+          ..opacity = s.opacity
           ..coords = List<double>.of(s.coords)
           ..minX = s.minX
           ..minY = s.minY

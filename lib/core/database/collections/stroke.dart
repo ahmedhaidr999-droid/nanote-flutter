@@ -7,6 +7,33 @@ part 'stroke.g.dart';
 /// pressure outlines — see [InkPainter].
 enum InkTool { pen, highlighter, shape }
 
+/// Pen rendering style (XNota-style brush catalogue, v1.3). Stored as an
+/// ordinal int on the row (`styleValue`), NOT as an @enumerated field, so
+/// adding styles later never risks Isar enum remapping.
+///
+/// Geometry-affecting styles (taper / speed / calligraphy) modify the
+/// pressure profile at tessellation time ([InkOutlineBuilder]); the others
+/// branch in the renderer ([InkPainter.drawInkStroke]).
+enum PenStyle {
+  regular,
+  pencil,
+  calligraphy,
+  neon,
+  dashed,
+  speed,
+  taper,
+  rainbow,
+}
+
+/// Convenience accessors for the stored style ordinal (defensive against
+/// legacy rows / future appended styles).
+extension PenStyleCodec on Stroke {
+  PenStyle get penStyle =>
+      styleValue >= 0 && styleValue < PenStyle.values.length
+          ? PenStyle.values[styleValue]
+          : PenStyle.regular;
+}
+
 /// One vector stroke — the atomic unit of Nanote ink.
 ///
 /// Storage layout:
@@ -33,6 +60,14 @@ class Stroke {
 
   int colorValue = 0xFF155EEF;
   double baseWidth = 2.6;
+
+  /// Rendering style — [PenStyle] ordinal (see the enum docs). 0 = regular,
+  /// which is what every pre-v1.3 row stores.
+  int styleValue = 0;
+
+  /// Stroke opacity 0.1–1.0 (applied by the renderer on top of any tool
+  /// blending — highlighter keeps its own multiply alpha).
+  double opacity = 1.0;
 
   List<double> coords = const [];
 

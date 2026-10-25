@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/database/collections/text_block.dart';
 import '../../domain/models/shape_tool.dart';
@@ -322,6 +323,12 @@ class InputRouter {
               _pressureOf(e),
               tool,
             );
+            // XNota-parity: a light haptic tick at stroke start (stylus and
+            // mouse only — finger strokes fire too often with palm
+            // rejection edge cases).
+            if (e.kind != PointerDeviceKind.touch) {
+              HapticFeedback.selectionClick();
+            }
 
           case ToolType.eraser:
             _inkPointer = e.pointer;

@@ -9,11 +9,15 @@
 ## Features
 
 - Pressure-sensitive vector ink (Catmull-Rom → Bézier, variable-width outlines)
+- **8 pen styles**: pen, pencil, calligraphy nib, neon glow, dashed, speed brush, taper, rainbow — plus per-stroke opacity
 - Palm rejection: stylus-range lockout, contact-area threshold, finger-drawing toggle
-- Pen · Highlighter (multiply blend) · Pixel/Stroke eraser · Lasso (move, scale, rotate, recolor, delete)
+- Pen · Highlighter (multiply blend) · Pixel/Stroke eraser · Lasso (move, scale, rotate, recolor, delete) · Hand · Shapes (line/arrow/rect/ellipse/triangle) · Text · **Sticky notes**
+- Floating Notewise-style editor chrome: nav pill, tool pill, contextual rows, page badge with zoom menu, edge arrows, thumbnails rail, read mode
+- **Trash** — soft delete, restore, delete forever (XNota parity)
+- **Offline export** — whole document to PDF, single page to PNG. No network, no accounts
 - Infinite nested folders, grid/list library, sorting & search
 - PDF import & annotation — 1000+ page documents, virtualized raster tile cache
-- Per-page undo/redo, Material 3 light/dark themes
+- Per-page undo/redo, Material 3 light/dark themes, keep-awake while inking, haptic stroke ticks
 
 ## Build
 

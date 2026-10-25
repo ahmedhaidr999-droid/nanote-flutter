@@ -56,6 +56,11 @@ class Document {
   /// Manual ordering position within the folder (used when sort == manual).
   int sortIndex = 0;
 
+  /// TRASH (XNota parity): non-null while the document sits in Trash —
+  /// every shelf/search query filters on `trashedAt == null`. Restore
+  /// clears it; purge removes the row entirely.
+  DateTime? trashedAt;
+
   DateTime createdAt = DateTime.now();
   DateTime updatedAt = DateTime.now();
 

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/database/collections/stroke.dart' show PenStyle;
 import '../models/stroke_point.dart';
 
 /// Pure geometry for the vector ink engine.
@@ -112,8 +113,100 @@ class InkOutlineBuilder {
   /// range stays visible instead of collapsing to nothing.
   static const double kMinPressureFactor = 0.35;
 
-  static double halfWidth(double baseWidth, double pressure) =>
-      baseWidth * (kMinPressureFactor + (1 - kMinPressureFactor) * pressure) * 0.5;
+  /// Style strokes (taper/speed/calligraphy) synthesize their own pressure
+  /// profiles — their floor is much lower so the effect can read clearly.
+  static const double _kStyleMinPressureFactor = 0.08;
+
+  /// Nib direction for the calligraphy style (radians). −π/4 = italic —
+  /// horizontal strokes are fat, vertical strokes are hairlines.
+  static const double _kCalligraphyNibAngle = -math.pi / 4;
+
+  static double halfWidth(
+    double baseWidth,
+    double pressure, [
+    double minFactor = kMinPressureFactor,
+  ]) =>
+      baseWidth *
+      (minFactor + (1 - minFactor) * pressure) *
+      0.5;
+
+  /// Effective pressure per point for [style] (same length as [pts]).
+  ///
+  /// Geometry-affecting styles remap the raw stylus pressure:
+  ///  • taper — ramps both ends down to ~12% (feathered entry/exit);
+  ///  • speed — width from LOCAL SPACING (a proxy for velocity: the 1-pt
+  ///    minimum point distance means fast strokes land points far apart) —
+  ///    fast = thin, slow = thick, like a loaded ink brush;
+  ///  • calligraphy — width from the angle between the stroke direction
+  ///    and a fixed nib angle; pressure is ignored entirely.
+  static List<double> _effectivePressures(
+    List<StrokePoint> pts,
+    PenStyle style,
+  ) {
+    final n = pts.length;
+    final out = List<double>.filled(n, 1.0, growable: false);
+    switch (style) {
+      case PenStyle.regular:
+      case PenStyle.pencil:
+      case PenStyle.neon:
+      case PenStyle.dashed:
+      case PenStyle.rainbow:
+        for (var i = 0; i < n; i++) {
+          out[i] = pts[i].pressure;
+        }
+        return out;
+
+      case PenStyle.taper:
+        final ramp = math.max(1, (n * 0.22).floor());
+        for (var i = 0; i < n; i++) {
+          final edge = math.min(i, n - 1 - i);
+          final f = (edge / ramp).clamp(0.12, 1.0);
+          out[i] = pts[i].pressure * f;
+        }
+        return out;
+
+      case PenStyle.speed:
+        for (var i = 0; i < n; i++) {
+          final d = i == 0
+              ? 1.0
+              : (pts[i].position - pts[i - 1].position).distance;
+          // Spacing 1 pt (slow) → full width; ~14 pt (fast) → 28% width.
+          final v = (1.1 - d / 14.0).clamp(0.28, 1.0);
+          out[i] = pts[i].pressure * v;
+        }
+        return out;
+
+      case PenStyle.calligraphy:
+        for (var i = 0; i < n; i++) {
+          final prev = pts[i > 0 ? i - 1 : 0].position;
+          final next = pts[i < n - 1 ? i + 1 : n - 1].position;
+          final dir = next - prev;
+          final len = dir.distance;
+          if (len < 1e-6) {
+            out[i] = 1.0;
+            continue;
+          }
+          final angle = math.atan2(dir.dy, dir.dx);
+          final d = (angle - _kCalligraphyNibAngle).abs();
+          // Width ∝ how close the motion is to the nib's broad axis.
+          out[i] = math.sin(d).abs().clamp(0.1, 1.0);
+        }
+        return out;
+    }
+  }
+
+  /// Whether [style] needs the lower width floor so its synthetic profile
+  /// can actually go thin (see [_kStyleMinPressureFactor]).
+  static bool _usesLowFloor(PenStyle style) =>
+      style == PenStyle.taper ||
+      style == PenStyle.speed ||
+      style == PenStyle.calligraphy;
+
+  /// Public view of [_effectivePressures] — the exporter reuses the exact
+  /// width profiles when it rasterizes/prints strokes outside the painter.
+  static List<double> effectivePressuresOf(
+          List<StrokePoint> pts, PenStyle style) =>
+      _effectivePressures(pts, style);
 
   /// Builds the fill-able outline of a stroke:
   ///  1. unit tangent per point (central differences, one-sided at ends);
@@ -123,17 +216,29 @@ class InkOutlineBuilder {
   ///
   /// [constantWidth] disables the pressure curve (highlighter): the width
   /// is a flat band, exactly like a chisel marker.
+  ///
+  /// [style] selects a geometry-affecting pen profile (see
+  /// [_effectivePressures]) — regular rendering styles pass through the raw
+  /// pressures unchanged.
   static InkOutline build(
     List<StrokePoint> pts,
     double baseWidth, {
     bool constantWidth = false,
+    PenStyle style = PenStyle.regular,
   }) {
     if (pts.isEmpty) return InkOutline.empty;
 
     final first = pts.first;
     final last = pts.last;
-    final rStart =
-        constantWidth ? baseWidth * 0.5 : halfWidth(baseWidth, first.pressure);
+    final minFactor = _usesLowFloor(style)
+        ? _kStyleMinPressureFactor
+        : kMinPressureFactor;
+    final pressures = constantWidth
+        ? null
+        : _effectivePressures(pts, style);
+    final rStart = constantWidth
+        ? baseWidth * 0.5
+        : halfWidth(baseWidth, pressures![0], minFactor);
 
     if (pts.length == 1 || (last.position - first.position).distance < 0.5) {
       // Dot — a single cap carries the whole ink.
@@ -165,7 +270,7 @@ class InkOutlineBuilder {
       }
       final h = constantWidth
           ? baseWidth * 0.5
-          : halfWidth(baseWidth, pts[i].pressure);
+          : halfWidth(baseWidth, pressures![i], minFactor);
       final p = pts[i].position;
       // Left normal = (−ty, tx).
       left[i] = Offset(p.dx - ty * h, p.dy + tx * h);
@@ -184,7 +289,7 @@ class InkOutlineBuilder {
       endCenter: last.position,
       endRadius: constantWidth
           ? baseWidth * 0.5
-          : halfWidth(baseWidth, last.pressure),
+          : halfWidth(baseWidth, pressures![n - 1], minFactor),
     );
   }
 }

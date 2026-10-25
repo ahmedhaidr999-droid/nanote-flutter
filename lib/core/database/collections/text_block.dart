@@ -31,5 +31,10 @@ class TextBlock {
 
   int colorValue = 0xFF111827;
 
+  /// 0 → a plain text box. Otherwise the ARGB background of a STICKY NOTE
+  /// (XNota parity): the painter draws a rounded, shadowed swatch behind
+  /// the text in this color.
+  int stickyColorValue = 0;
+
   DateTime updatedAt = DateTime.now();
 }

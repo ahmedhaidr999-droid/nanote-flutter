@@ -1,6 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/database/collections/stroke.dart' show PenStyle;
 import '../../domain/models/input_settings.dart';
 import '../../domain/models/shape_tool.dart';
 import '../../domain/models/tools.dart';
@@ -164,6 +167,8 @@ class EditorTopChrome extends ConsumerStatefulWidget {
     this.onAddPage,
     required this.onToggleReadMode,
     required this.onOpenSettings,
+    this.onExportPdf,
+    this.onExportPng,
   });
 
   /// Controllers of the CURRENTLY VISIBLE page (null while hydrating).
@@ -173,6 +178,10 @@ class EditorTopChrome extends ConsumerStatefulWidget {
   final VoidCallback? onAddPage;
   final VoidCallback onToggleReadMode;
   final VoidCallback onOpenSettings;
+
+  /// Offline export actions (XNota parity). Null hides the entries.
+  final VoidCallback? onExportPdf;
+  final VoidCallback? onExportPng;
 
   @override
   ConsumerState<EditorTopChrome> createState() => _EditorTopChromeState();
@@ -257,9 +266,14 @@ class _EditorTopChromeState extends ConsumerState<EditorTopChrome> {
                   ),
                   _ChromeButton(
                     icon: Icons.more_horiz,
-                    tooltip: 'Input & touch settings',
+                    tooltip: 'More options',
                     selected: false,
-                    onTap: widget.onOpenSettings,
+                    onTap: () => showEditorMenuSheet(
+                      context,
+                      onExportPdf: widget.onExportPdf,
+                      onExportPng: widget.onExportPng,
+                      onOpenSettings: widget.onOpenSettings,
+                    ),
                   ),
                 ],
               ),
@@ -268,7 +282,14 @@ class _EditorTopChromeState extends ConsumerState<EditorTopChrome> {
         ),
         if (!_collapsed) ...[
           const SizedBox(height: 8),
-          _ContextPill(tool: tool),
+          Center(
+            // scaleDown keeps the widest context rows (pen styles + sizes +
+            // colors) inside small-window splits and portrait phones.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: _ContextPill(tool: tool),
+            ),
+          ),
         ],
       ],
     );
@@ -399,15 +420,7 @@ class _ContextPill extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     switch (tool.tool) {
       case ToolType.pen:
-        return _InkContext(
-          sizes: kPenSizePresets,
-          size: tool.penSize,
-          onSize: (s) => ref.read(toolPaletteProvider.notifier).setPenSize(s),
-          swatches: kPenSwatches,
-          color: tool.penColor,
-          onColor: (c) =>
-              ref.read(toolPaletteProvider.notifier).setPenColor(c),
-        );
+        return _PenContext(tool: tool);
       case ToolType.highlighter:
         return _InkContext(
           sizes: kHighlighterSizePresets,
@@ -434,7 +447,54 @@ class _ContextPill extends ConsumerWidget {
   }
 }
 
-/// Shared row for ink-like tools: thickness presets · color swatches · "+".
+/// Pen context — the XNota two-row layout: brush styles above, sizes /
+/// opacity / colors below.
+class _PenContext extends ConsumerWidget {
+  const _PenContext({required this.tool});
+
+  final ToolPaletteState tool;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(toolPaletteProvider.notifier);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _PillShell(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final s in PenStyle.values)
+                _PenStyleChip(
+                  style: s,
+                  color: tool.penColor,
+                  selected: tool.penStyle == s,
+                  onTap: () => notifier.setPenStyle(s),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        _InkContext(
+          sizes: kPenSizePresets,
+          size: tool.penSize,
+          onSize: notifier.setPenSize,
+          swatches: kPenSwatches,
+          color: tool.penColor,
+          onColor: notifier.setPenColor,
+          opacity: tool.penOpacity,
+          onOpacity: notifier.setPenOpacity,
+        ),
+      ],
+    );
+  }
+}
+
+/// Shared row for ink-like tools: thickness presets · (pen: opacity
+/// presets) · color swatches · "+". [opacity]/[onOpacity] are only
+/// provided by the pen.
 class _InkContext extends ConsumerWidget {
   const _InkContext({
     required this.sizes,
@@ -443,6 +503,8 @@ class _InkContext extends ConsumerWidget {
     required this.swatches,
     required this.color,
     required this.onColor,
+    this.opacity,
+    this.onOpacity,
   });
 
   final List<double> sizes;
@@ -451,9 +513,13 @@ class _InkContext extends ConsumerWidget {
   final List<Color> swatches;
   final Color color;
   final ValueChanged<Color> onColor;
+  final double? opacity;
+  final ValueChanged<double>? onOpacity;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final o = opacity;
+    final onO = onOpacity;
     return _PillShell(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -464,6 +530,16 @@ class _InkContext extends ConsumerWidget {
               selected: (size - s).abs() < 0.05,
               onTap: () => onSize(s),
             ),
+          if (o != null && onO != null) ...[
+            const _ChromeDivider(),
+            for (final preset in kPenOpacityPresets)
+              _OpacityChip(
+                color: color,
+                opacity: preset,
+                selected: (o - preset).abs() < 0.02,
+                onTap: () => onO(preset),
+              ),
+          ],
           const _ChromeDivider(),
           for (final c in swatches)
             _SwatchChip(
@@ -586,29 +662,64 @@ class _TextContext extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(toolPaletteProvider.notifier);
-    return _PillShell(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final s in kTextSizePresets)
-            _ThicknessChip(
-              thickness: s / 2.2, // visual weight proportional to font size
-              selected: (tool.textSize - s).abs() < 0.05,
-              onTap: () => notifier.setTextSize(s),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _PillShell(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ChromeButton(
+                icon: Icons.sticky_note_2_outlined,
+                tooltip: tool.textSticky
+                    ? 'Sticky notes ON — tap to type plain text'
+                    : 'Sticky note mode — tap the page for a sticky',
+                selected: tool.textSticky,
+                onTap: () => notifier.setTextSticky(!tool.textSticky),
+              ),
+              const _ChromeDivider(),
+              for (final s in kTextSizePresets)
+                _ThicknessChip(
+                  thickness: s / 2.2, // visual weight ∝ font size
+                  selected: (tool.textSize - s).abs() < 0.05,
+                  onTap: () => notifier.setTextSize(s),
+                ),
+              const _ChromeDivider(),
+              for (final c in kPenSwatches)
+                _SwatchChip(
+                  color: c,
+                  selected: c == tool.textColor,
+                  onTap: () => notifier.setTextColor(c),
+                ),
+              _SwatchPlusChip(
+                current: tool.textColor,
+                onPick: (c) => notifier.setTextColor(c),
+              ),
+            ],
+          ),
+        ),
+        if (tool.textSticky) ...[
+          const SizedBox(height: 8),
+          _PillShell(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.palette_outlined,
+                    size: 18, color: Color(0xFF9EC0FF)),
+                const SizedBox(width: 6),
+                for (final c in kStickySwatches)
+                  _SwatchChip(
+                    color: c,
+                    selected: c == tool.stickyColor,
+                    onTap: () => notifier.setStickyColor(c),
+                  ),
+              ],
             ),
-          const _ChromeDivider(),
-          for (final c in kPenSwatches)
-            _SwatchChip(
-              color: c,
-              selected: c == tool.textColor,
-              onTap: () => notifier.setTextColor(c),
-            ),
-          _SwatchPlusChip(
-            current: tool.textColor,
-            onPick: (c) => notifier.setTextColor(c),
           ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -775,6 +886,245 @@ class _SwatchPlusChip extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Pen style chips (XNota brush catalogue) + opacity chips
+// ────────────────────────────────────────────────────────────────────────
+
+/// One brush-style chip with a mini live preview of the style.
+class _PenStyleChip extends StatelessWidget {
+  const _PenStyleChip({
+    required this.style,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final PenStyle style;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  static String _label(PenStyle s) => switch (s) {
+        PenStyle.regular => 'Pen',
+        PenStyle.pencil => 'Pencil',
+        PenStyle.calligraphy => 'Calligraphy nib',
+        PenStyle.neon => 'Neon pen',
+        PenStyle.dashed => 'Dashed',
+        PenStyle.speed => 'Speed brush',
+        PenStyle.taper => 'Taper',
+        PenStyle.rainbow => 'Rainbow',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: _label(style),
+      preferBelow: false,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected
+                  ? kChromeActiveColor.withOpacity(0.22)
+                  : Colors.transparent,
+            ),
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: CustomPaint(
+                painter: _StylePreviewPainter(
+                  style: style,
+                  color: color,
+                  highlighted: selected,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Mini stroke preview for [_PenStyleChip] — tiny primitives only, no
+/// engine coupling.
+class _StylePreviewPainter extends CustomPainter {
+  const _StylePreviewPainter({
+    required this.style,
+    required this.color,
+    required this.highlighted,
+  });
+
+  final PenStyle style;
+  final Color color;
+  final bool highlighted;
+
+  static const _wiggle = [
+    Offset(2, 16),
+    Offset(6, 9),
+    Offset(10, 19),
+    Offset(14, 7),
+    Offset(18, 18),
+    Offset(22, 10),
+    Offset(26, 14),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = highlighted ? const Color(0xFF9EC0FF) : color;
+
+    ui.Paint stroke(double width, [Color? col]) => ui.Paint()
+      ..style = ui.PaintingStyle.stroke
+      ..strokeCap = ui.StrokeCap.round
+      ..strokeJoin = ui.StrokeJoin.round
+      ..strokeWidth = width
+      ..color = col ?? c;
+
+    switch (style) {
+      case PenStyle.regular:
+        _strokeWiggle(canvas, stroke(3.4));
+        break;
+
+      case PenStyle.pencil:
+        _strokeWiggle(canvas, stroke(3.4, c.withOpacity(0.55)));
+        _strokeWiggle(canvas, stroke(1.1, c.withOpacity(0.8)),
+            const Offset(0.6, 0.6));
+        break;
+
+      case PenStyle.calligraphy:
+        // Nib: width from the angle between motion and the 45° nib axis.
+        for (var i = 0; i + 1 < _wiggle.length; i++) {
+          final a = _wiggle[i];
+          final b = _wiggle[i + 1];
+          final d = (b - a).distance;
+          if (d < 1e-6) continue;
+          final w = 1.0 + 4.4 * ((b.dy - a.dy).abs() / d);
+          canvas.drawLine(a, b, stroke(w));
+        }
+        break;
+
+      case PenStyle.neon:
+        _strokeWiggle(canvas, stroke(6.5, c.withOpacity(0.35)));
+        _strokeWiggle(canvas, stroke(2.2, const Color(0xFFFFFFFF)));
+        break;
+
+      case PenStyle.dashed:
+        var on = true;
+        for (var i = 0; i + 1 < _wiggle.length; i++) {
+          if (on) canvas.drawLine(_wiggle[i], _wiggle[i + 1], stroke(3.2));
+          on = !on;
+        }
+        break;
+
+      case PenStyle.speed:
+        for (var i = 0; i + 1 < _wiggle.length; i++) {
+          final w = 5.2 - i * 0.7;
+          canvas.drawLine(_wiggle[i], _wiggle[i + 1], stroke(w));
+        }
+        break;
+
+      case PenStyle.taper:
+        const widths = [0.8, 2.2, 4.4, 2.2, 0.8];
+        for (var i = 0; i + 1 < _wiggle.length; i++) {
+          canvas.drawLine(_wiggle[i], _wiggle[i + 1],
+              stroke(widths[i.clamp(0, widths.length - 1)]));
+        }
+        break;
+
+      case PenStyle.rainbow:
+        const hues = [Colors.red, Colors.orange, Colors.green, Colors.blue];
+        for (var i = 0; i + 1 < _wiggle.length; i++) {
+          canvas.drawLine(
+            _wiggle[i],
+            _wiggle[i + 1],
+            stroke(3.2, hues[(i ~/ 2) % hues.length]),
+          );
+        }
+        break;
+    }
+  }
+
+  static void _strokeWiggle(ui.Canvas canvas, ui.Paint paint,
+      [ui.Offset shift = ui.Offset.zero]) {
+    final path = ui.Path();
+    path.moveTo(_wiggle.first.dx, _wiggle.first.dy);
+    for (var i = 1; i < _wiggle.length; i++) {
+      // Gentle smoothing through midpoints keeps the preview curvy.
+      final mid = ui.Offset((_wiggle[i - 1].dx + _wiggle[i].dx) / 2,
+          (_wiggle[i - 1].dy + _wiggle[i].dy) / 2);
+      final prev = i == 1 ? _wiggle.first : ui.Offset(
+          (_wiggle[i - 2].dx + _wiggle[i - 1].dx) / 2,
+          (_wiggle[i - 2].dy + _wiggle[i - 1].dy) / 2);
+      path.quadraticBezierTo(prev.dx, prev.dy, mid.dx, mid.dy);
+    }
+    path.lineTo(_wiggle.last.dx, _wiggle.last.dy);
+    canvas.drawPath(path.shift(shift), paint);
+  }
+
+  @override
+  bool shouldRepaint(_StylePreviewPainter old) =>
+      old.style != style || old.color != color || old.highlighted != highlighted;
+}
+
+/// Opacity preset chip — a disc of [color] at the preset opacity.
+class _OpacityChip extends StatelessWidget {
+  const _OpacityChip({
+    required this.color,
+    required this.opacity,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final double opacity;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '${(opacity * 100).round()}%',
+      preferBelow: false,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 46,
+            height: 46,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withOpacity(opacity),
+                  border: Border.all(
+                    color: selected
+                        ? Colors.white
+                        : const Color(0x55FFFFFF),
+                    width: selected ? 2.6 : 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Selection pill (lasso actions) — Notewise dark restyle
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -827,7 +1177,61 @@ class _SelectionPill extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Touch settings sheet (the "…" menu)
+// Editor menu sheet (the "…" menu)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Export + input settings — everything under "…". Entries with null
+/// callbacks are hidden (e.g. exports before the page hydrated).
+Future<void> showEditorMenuSheet(
+  BuildContext context, {
+  VoidCallback? onExportPdf,
+  VoidCallback? onExportPng,
+  required VoidCallback onOpenSettings,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onExportPdf != null)
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('Export as PDF'),
+              subtitle: const Text('All pages — fully offline'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                onExportPdf();
+              },
+            ),
+          if (onExportPng != null)
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Save page as PNG'),
+              subtitle: const Text('The current page at 2× resolution'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                onExportPng();
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.touch_app_outlined),
+            title: const Text('Input & touch'),
+            subtitle: const Text('Palm rejection · finger drawing'),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              onOpenSettings();
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Touch settings sheet (the "Input & touch" entry)
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Finger-drawing & palm-rejection switches — the two cold input

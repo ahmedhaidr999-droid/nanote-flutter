@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../../core/database/collections/document.dart';
 import '../../../../core/database/collections/note_page.dart';
 import '../../../library/data/library_providers.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../pdf/data/pdf_tile_cache.dart';
+import '../../data/export_service.dart';
+import '../../data/stroke_repository.dart';
+import '../../data/text_repository.dart';
 import '../../domain/models/input_settings.dart';
 import '../../domain/models/tools.dart';
 import '../canvas/navigation_shield.dart';
@@ -75,10 +79,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _readMode = false;
   bool _thumbsOpen = false;
 
+  /// Export progress (ValueNotifier → no editor rebuilds per page).
+  final ValueNotifier<double?> _exportProgress = ValueNotifier(null);
+
   @override
   void initState() {
     super.initState();
     _shield.addListener(_onShieldChanged);
+    // XNota parity: the screen stays awake while a note is open for ink.
+    WakelockPlus.enable();
   }
 
   @override
@@ -94,6 +103,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     _shield.removeListener(_onShieldChanged);
     _shield.dispose();
     _pageController?.dispose();
+    _exportProgress.dispose();
+    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -232,6 +243,61 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   }
 
   // ── Zoom actions (operate on the CURRENT page's viewport) ────────────────
+
+  // ── Offline export (XNota parity) ───────────────────────────────────
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _exportPdf(Document doc, List<NotePage> pages) async {
+    if (_exportProgress.value != null) return; // already exporting
+    _exportProgress.value = 0.0;
+    try {
+      final strokesRepo = await ref.read(strokeRepositoryProvider.future);
+      final textRepo = await ref.read(textRepositoryProvider.future);
+      final export = ExportService(ref.read(pdfDocumentServiceProvider));
+      final path = await export.exportDocumentPdf(
+        document: doc,
+        pages: pages,
+        strokesFor: (p) => strokesRepo.loadStrokes(p.id),
+        textFor: (p) => textRepo.loadBlocks(p.id),
+        onProgress: (done, total) => _exportProgress.value = done / total,
+      );
+      _exportProgress.value = null;
+      if (path == null) {
+        _showSnack('Export canceled');
+      } else {
+        _showSnack('PDF saved');
+      }
+    } catch (e) {
+      _exportProgress.value = null;
+      _showSnack('Export failed: $e');
+    }
+  }
+
+  Future<void> _exportPng(Document doc, NotePage page) async {
+    final c = _controllersByPage[page.id];
+    if (c == null) {
+      _showSnack('The page is still loading — try again in a moment');
+      return;
+    }
+    try {
+      final export = ExportService(ref.read(pdfDocumentServiceProvider));
+      final path = await export.exportPagePng(
+        document: doc,
+        page: page,
+        strokes: List.of(c.ink.strokes),
+        textBlocks: List.of(c.text.blocks),
+      );
+      if (mounted && path != null) _showSnack('PNG saved');
+    } catch (e) {
+      _showSnack('Export failed: $e');
+    }
+  }
 
   PageControllers? get _currentControllers {
     final doc = ref.read(libraryDocumentProvider(widget.documentId)).value;
@@ -373,6 +439,52 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           children: [
             Positioned.fill(child: scaffoldBody),
 
+            // ── Export progress pill (top center) ─────────────────────
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: SafeArea(
+                    child: ValueListenableBuilder<double?>(
+                      valueListenable: _exportProgress,
+                      builder: (context, v, _) {
+                        if (v == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: kChromePillColor,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: const [kChromeShadow],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Exporting… ${(v * 100).round()}%',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
             // ── Thumbnails rail + scrim ────────────────────────────────
             if (doc != null && pages.isNotEmpty) ...[
               Positioned.fill(
@@ -432,6 +544,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             : null,
                     onToggleReadMode: () => setState(() => _readMode = true),
                     onOpenSettings: () => showTouchSettingsSheet(context),
+                    onExportPdf: (doc != null && pages.isNotEmpty)
+                        ? () => _exportPdf(doc, pages)
+                        : null,
+                    onExportPng: (doc != null && currentPage != null)
+                        ? () => _exportPng(doc, currentPage!)
+                        : null,
                   ),
                 ),
               )

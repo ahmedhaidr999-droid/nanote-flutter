@@ -291,21 +291,52 @@ class _MiniPagePainter extends CustomPainter {
       }
     }
 
-    // Strokes — simple polylines.
+    // Strokes — simple polylines (thumbnail fidelity is deliberately lower
+    // than the editor: no outlines, no glow, just readable marks).
     for (final st in strokes) {
       final pts = st.readPoints();
       if (pts.isEmpty) continue;
       final paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = Color(st.colorValue)
-        ..strokeWidth =
-            (st.baseWidth * s).clamp(0.4, 3.0);
+        ..strokeJoin = StrokeJoin.round;
+
       if (st.tool == InkTool.highlighter) {
         paint.color = Color(st.colorValue).withAlpha(115);
+      } else if (st.tool == InkTool.shape) {
+        paint.color = Color(st.colorValue);
+      } else {
+        switch (st.penStyle) {
+          case PenStyle.rainbow:
+            var hue = ((st.id % 60) * 6.0) % 360.0;
+            for (var i = 0; i + 1 < pts.length; i++) {
+              paint
+                ..color = HSVColor.fromAHSV(1, hue % 360, 0.85, 1.0)
+                    .toColor()
+                ..strokeWidth =
+                    (st.baseWidth * s).clamp(0.4, 3.0);
+              canvas.drawLine(pts[i].position * s, pts[i + 1].position * s,
+                  paint);
+              hue += 6.0;
+            }
+            continue;
+          case PenStyle.pencil:
+            paint.color = Color(st.colorValue).withOpacity(0.6 * st.opacity);
+          case PenStyle.neon:
+            paint.color = Color(st.colorValue);
+          case PenStyle.regular:
+          case PenStyle.calligraphy:
+          case PenStyle.dashed:
+          case PenStyle.speed:
+          case PenStyle.taper:
+            paint.color = st.opacity < 0.999
+                ? Color(st.colorValue).withOpacity(st.opacity)
+                : Color(st.colorValue);
+        }
       }
-      final path = Path()..moveTo(pts.first.position.dx * s, pts.first.position.dy * s);
+      paint.strokeWidth = (st.baseWidth * s).clamp(0.4, 3.0);
+      final path = Path()
+        ..moveTo(pts.first.position.dx * s, pts.first.position.dy * s);
       for (final p in pts.skip(1)) {
         path.lineTo(p.position.dx * s, p.position.dy * s);
       }

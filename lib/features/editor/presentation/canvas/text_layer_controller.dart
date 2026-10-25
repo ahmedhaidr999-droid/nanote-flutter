@@ -110,6 +110,7 @@ class TextLayerController extends ChangeNotifier {
     required String content,
     required double fontSize,
     required int colorValue,
+    int stickyColorValue = 0,
   }) async {
     final b = TextBlock()
       ..pageId = pageId
@@ -117,7 +118,8 @@ class TextLayerController extends ChangeNotifier {
       ..y = at.dy
       ..content = content
       ..fontSize = fontSize
-      ..colorValue = colorValue;
+      ..colorValue = colorValue
+      ..stickyColorValue = stickyColorValue;
     blocks.add(b);
     notifyListeners();
     await persistBlock(b);

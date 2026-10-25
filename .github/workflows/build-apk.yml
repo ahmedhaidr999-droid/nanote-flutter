@@ -63,21 +63,19 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.0
-          name: Nanote v1.2.0 — Android APK
+          tag_name: v1.3.0
+          name: Nanote v1.3.0 — Android APK
           body: |
             **Nanote** — offline-first, vector-based note-taking. 100% local. No cloud. No AI.
 
-            **v1.2.0 — Notewise-style editor redesign**
-            - 🎨 **All-new editor interface** modeled after Notewise: dark floating pills over the canvas — navigation pill (back · thumbnails · add page), tool pill (undo/redo · hand · lasso · pen · highlighter · eraser · shapes · text), and a contextual options row (thickness presets · color swatches · extended palette) that adapts to the active tool.
-            - 🖐 **Hand tool** — one finger pans & zooms the page; pages never flip while panning.
-            - 🔷 **Shape tool** — line, arrow, rectangle, ellipse, triangle; crisp geometry, one undo step per shape.
-            - 🔤 **Text tool** — tap anywhere to drop a text box; tap a box to edit it; drag to move. Text stays sharp at any zoom.
-            - 🖼 **Page thumbnails** — grid button opens a slide-in rail with live mini previews (PDF rasters + ink) and tap-to-jump.
-            - 🔍 **Zoom controls** — the page badge shows live page number & zoom %; tap % for Fit page / Fit width / 100% / zoom in-out.
-            - 📄 **Read mode** — the eye button hides all chrome for distraction-free reading (tap the eye-off pill to restore).
-            - ‹ › **Edge page arrows** + jump-to-page dialog for instant navigation in 1000-page PDFs.
-            - ✍️ Kept from v1.1.0: pen writes while palm rejection guards the page; springy page turns.
+            **v1.3.0 — XNota feature parity, wave 1**
+            - 🖌 **8 pen styles** — Pen · Pencil · Calligraphy nib (45°) · Neon glow · Dashed · Speed brush (fast = thin) · Taper (feathered ends) · Rainbow — live mini-preview chips in the toolbar, persisted per stroke, included in exports & thumbnails.
+            - ◐ **Pen opacity** — 100 / 60 / 35 presets beside the size row.
+            - 🗒 **Sticky notes** — text tool's sticky mode drops colored sticky notes anywhere; tap to edit, drag to move, 5 pastel colors.
+            - 📄 **Offline export** — "Export as PDF" (all pages: paper template, embedded original PDF content, ink with per-style width profiles, text & stickies) and "Save page as PNG" (2× render through the real painter). 100% local, system save dialog only.
+            - 🗑 **Trash** — deleted notes move to Trash (restore / delete forever / empty); deleting a folder keeps its notes restorable. New trash screen from the library.
+            - ✨ Stroke-start **haptic tick** and **keep-screen-awake** while a note is open.
+            - 🎨 Kept from v1.2.0: floating Notewise-style chrome, hand tool, shapes, text tool, thumbnails rail, read mode, zoom menu, edge arrows, springy page turns, palm rejection with the frozen pager.
 
             **Install:** download `app-release.apk` below, open it on your Android device/tablet and allow "Install unknown apps" if prompted.
 

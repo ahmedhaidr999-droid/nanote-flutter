@@ -173,6 +173,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             )
           : null,
       actions: [
+        IconButton(
+          tooltip: 'Trash',
+          icon: const Icon(Icons.delete_outline_outlined),
+          onPressed: () => openTrash(context),
+        ),
         if (prefs.searching)
           IconButton(
             tooltip: 'Close search',

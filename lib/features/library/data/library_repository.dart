@@ -10,6 +10,7 @@ import '../../../core/database/collections/document.dart';
 import '../../../core/database/collections/folder.dart';
 import '../../../core/database/collections/note_page.dart';
 import '../../../core/database/collections/stroke.dart';
+import '../../../core/database/collections/text_block.dart';
 import '../../../core/database/isar_provider.dart';
 import '../../../core/utils/path_helpers.dart';
 import '../domain/library_models.dart';
@@ -61,10 +62,11 @@ class LibraryRepository {
 
     final q = _isar.documents.filter();
     var builder = searching
-        ? q.titleContains(needle, caseSensitive: false)
-        : folderId == null
-            ? q.folderIdIsNull()
-            : q.folderIdEqualTo(folderId);
+        ? q.titleContains(needle, caseSensitive: false).trashedAtIsNull()
+        : (folderId == null
+                ? q.folderIdIsNull()
+                : q.folderIdEqualTo(folderId))
+            .trashedAtIsNull();
 
     final sorted = searching || sort == LibrarySort.updated
         ? builder.sortByUpdatedAtDesc()
@@ -215,12 +217,20 @@ class LibraryRepository {
     final docs = await _isar.documents
         .filter()
         .anyOf(folderIds, (q, int id) => q.folderIdEqualTo(id))
+        .trashedAtIsNull()
         .findAll();
 
-    for (final doc in docs) {
-      await deleteDocument(doc);
-    }
-    await _isar.writeTxn(() => _isar.folders.deleteAll(folderIds));
+    // XNota parity: the folder tree goes for good, but its notes move to
+    // TRASH (re-anchored to the root shelf so restore always has a home).
+    await _isar.writeTxn(() async {
+      for (final doc in docs) {
+        doc
+          ..folderId = null
+          ..trashedAt = DateTime.now();
+      }
+      await _isar.documents.putAll(docs);
+      await _isar.folders.deleteAll(folderIds);
+    });
   }
 
   /// All folders (move picker tree). Name order for stable tree display.
@@ -299,6 +309,10 @@ class LibraryRepository {
             .filter()
             .anyOf(pageIds, (q, int id) => q.pageIdEqualTo(id))
             .deleteAll();
+        await _isar.textBlocks
+            .filter()
+            .anyOf(pageIds, (q, int id) => q.pageIdEqualTo(id))
+            .deleteAll();
       }
       await _isar.notePages.deleteAll(pageIds);
       await _isar.documents.delete(doc.id);
@@ -353,5 +367,37 @@ class LibraryRepository {
     if (doc == null) return;
     doc.updatedAt = DateTime.now();
     await _isar.writeTxn(() => _isar.documents.put(doc));
+  }
+
+  // ── Trash (XNota parity) ────────────────────────────────────────
+
+  /// Soft-deletes a document: it disappears from every shelf and search,
+  /// but lives in Trash until restored or purged.
+  Future<void> trashDocument(Document doc) async {
+    doc.trashedAt = DateTime.now();
+    await _isar.writeTxn(() => _isar.documents.put(doc));
+  }
+
+  /// Restores a trashed document to its original folder.
+  Future<void> restoreDocument(Document doc) async {
+    doc.trashedAt = null;
+    await _isar.writeTxn(() => _isar.documents.put(doc));
+  }
+
+  /// Everything in Trash, most recently trashed first.
+  Stream<List<Document>> watchTrash() => _isar.documents
+      .filter()
+      .trashedAtIsNotNull()
+      .sortByTrashedAtDesc()
+      .watch(fireImmediately: true);
+
+  /// Permanently deletes every trashed document. Returns how many.
+  Future<int> emptyTrash() async {
+    final trashed =
+        await _isar.documents.filter().trashedAtIsNotNull().findAll();
+    for (final doc in trashed) {
+      await deleteDocument(doc);
+    }
+    return trashed.length;
   }
 }

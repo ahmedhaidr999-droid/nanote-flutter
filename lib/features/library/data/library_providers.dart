@@ -43,3 +43,10 @@ Stream<List<NotePage>> documentPages(Ref ref, int documentId) async* {
   final repo = await ref.watch(libraryRepositoryProvider.future);
   yield* repo.watchPages(documentId);
 }
+
+/// Everything currently in Trash (Trash screen). Newest trashed first.
+@riverpod
+Stream<List<Document>> trashDocuments(Ref ref) async* {
+  final repo = await ref.watch(libraryRepositoryProvider.future);
+  yield* repo.watchTrash();
+}

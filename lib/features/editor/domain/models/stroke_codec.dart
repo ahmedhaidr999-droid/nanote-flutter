@@ -27,12 +27,16 @@ Stroke strokeFromPoints({
   required int colorValue,
   required double baseWidth,
   required List<StrokePoint> points,
+  int styleValue = 0,
+  double opacity = 1.0,
 }) {
   final s = Stroke()
     ..pageId = pageId
     ..tool = tool
     ..colorValue = colorValue
-    ..baseWidth = baseWidth;
+    ..baseWidth = baseWidth
+    ..styleValue = styleValue
+    ..opacity = opacity.clamp(0.1, 1.0);
 
   final c = List<double>.filled(points.length * 3, 0, growable: false);
   var minX = double.infinity;

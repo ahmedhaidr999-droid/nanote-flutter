@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/editor/presentation/screens/editor_screen.dart';
 import '../features/library/presentation/screens/home_screen.dart';
+import '../features/library/presentation/screens/trash_screen.dart';
 
 /// Declarative navigation:
 ///
@@ -10,6 +11,7 @@ import '../features/library/presentation/screens/home_screen.dart';
 ///     /folder/:fid         → a folder's shelf (pushed repeatedly for
 ///                            arbitrarily deep nesting — the back stack IS
 ///                            the folder path)
+///     /trash               → trashed documents (restore / purge)
 ///     /doc/:did            → the editor for one document
 final GoRouter nanoteRouter = GoRouter(
   initialLocation: '/',
@@ -27,6 +29,11 @@ final GoRouter nanoteRouter = GoRouter(
             if (fid == null) return const HomeScreen(folderId: null);
             return HomeScreen(folderId: fid);
           },
+        ),
+        GoRoute(
+          path: 'trash',
+          name: 'trash',
+          builder: (context, state) => const TrashScreen(),
         ),
         GoRoute(
           path: 'doc/:did',
@@ -48,3 +55,5 @@ void openFolder(BuildContext context, int folderId) =>
 
 void openDocument(BuildContext context, int documentId) =>
     context.push('/doc/$documentId');
+
+void openTrash(BuildContext context) => context.push('/trash');

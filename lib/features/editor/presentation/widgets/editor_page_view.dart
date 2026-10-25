@@ -25,11 +25,13 @@ class PageControllers {
     required this.ink,
     required this.viewport,
     required this.selection,
+    required this.text,
   });
 
   final InkController ink;
   final ViewportController viewport;
   final SelectionController selection;
+  final TextLayerController text;
 }
 
 /// ONE page of ANY document — blank notebook or imported PDF — plus the
@@ -161,7 +163,8 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
     _text = text;
     if (mounted) setState(() {});
     widget.onControllersReady?.call(
-      PageControllers(ink: ink, viewport: viewport, selection: selection),
+      PageControllers(
+          ink: ink, viewport: viewport, selection: selection, text: text),
     );
   }
 
@@ -258,6 +261,8 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
             createAt: pagePoint,
             defaultSize: tool.textSize,
             defaultColor: tool.textColor,
+            stickyDefault: tool.textSticky,
+            stickyColorDefault: tool.stickyColor,
           );
         },
         onEditText: (block) {
@@ -268,6 +273,8 @@ class _EditorPageViewState extends ConsumerState<EditorPageView> {
             editing: block,
             defaultSize: tool.textSize,
             defaultColor: tool.textColor,
+            stickyDefault: tool.textSticky,
+            stickyColorDefault: tool.stickyColor,
           );
         },
         overlayAccentColor: Theme.of(context).colorScheme.primary,

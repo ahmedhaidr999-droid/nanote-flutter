@@ -31,6 +31,8 @@ class ActiveInk {
     required this.tool,
     required this.colorValue,
     required this.baseWidth,
+    required this.styleValue,
+    required this.opacity,
     required this.points,
   });
 
@@ -38,6 +40,12 @@ class ActiveInk {
   final InkTool tool;
   final int colorValue;
   final double baseWidth;
+
+  /// [PenStyle] ordinal — the renderer branches on it while the stroke is
+  /// live, exactly like committed ink.
+  final int styleValue;
+  final double opacity;
+
   final List<StrokePoint> points;
 
   Offset get lastPosition => points.last.position;
@@ -104,11 +112,13 @@ class InkController extends ChangeNotifier {
   int editVersion = 0;
 
   /// Tessellated outline of a committed stroke (cached on first request).
-  /// Highlighter strokes tessellate as constant-width bands.
+  /// Highlighter strokes tessellate as constant-width bands; pen strokes
+  /// honor their [PenStyle] profile (taper / speed / calligraphy).
   InkOutline outlineOf(Stroke s) => _outlineCache[s] ??= InkOutlineBuilder.build(
         s.readPoints(),
         s.baseWidth,
         constantWidth: s.tool == InkTool.highlighter,
+        style: s.tool == InkTool.highlighter ? PenStyle.regular : s.penStyle,
       );
 
   // ── Hydration ────────────────────────────────────────────────────────────
@@ -157,6 +167,8 @@ class InkController extends ChangeNotifier {
       tool: isHighlighter ? InkTool.highlighter : InkTool.pen,
       colorValue: (isHighlighter ? tool.highlighterColor : tool.penColor).value,
       baseWidth: isHighlighter ? tool.highlighterSize : tool.penSize,
+      styleValue: isHighlighter ? 0 : tool.penStyle.index,
+      opacity: isHighlighter ? 1.0 : tool.penOpacity,
       points: <StrokePoint>[StrokePoint(pagePos, _clampPressure(pressure))],
     );
     notifyListeners();
@@ -190,6 +202,8 @@ class InkController extends ChangeNotifier {
       tool: a.tool,
       colorValue: a.colorValue,
       baseWidth: a.baseWidth,
+      styleValue: a.styleValue,
+      opacity: a.opacity,
       points: a.points,
     )..id = nextLocalId();
     strokes.add(stroke);
@@ -226,6 +240,7 @@ class InkController extends ChangeNotifier {
           tool: InkTool.shape,
           colorValue: tool.penColor.value,
           baseWidth: tool.shapeSize,
+          opacity: tool.penOpacity,
           points: pl,
         )..id = nextLocalId(),
     ];
@@ -304,6 +319,8 @@ class InkController extends ChangeNotifier {
             tool: s.tool,
             colorValue: s.colorValue,
             baseWidth: s.baseWidth,
+            styleValue: s.styleValue,
+            opacity: s.opacity,
             points: run,
           )..id = nextLocalId());
         }

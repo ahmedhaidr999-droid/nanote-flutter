@@ -93,7 +93,7 @@ class _DocumentActionsSheet extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline),
-            title: const Text('Delete'),
+            title: const Text('Move to Trash'),
             textColor: Theme.of(context).colorScheme.error,
             iconColor: Theme.of(context).colorScheme.error,
             onTap: () {
@@ -113,13 +113,15 @@ void _confirmDelete(
   Future<LibraryRepository> repoFuture,
   Document document,
 ) {
+  // Capture BEFORE any pop — sheet/dialog contexts die with their route.
+  final messenger = ScaffoldMessenger.maybeOf(context);
   showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Delete document?'),
+      title: const Text('Move to Trash?'),
       content: Text(
-        '“${document.title}” and all its pages will be removed from this '
-        'device. This cannot be undone.',
+        '“${document.title}” will move to Trash. You can restore it from '
+        'there, or delete it forever.',
       ),
       actions: [
         TextButton(
@@ -132,9 +134,15 @@ void _confirmDelete(
           ),
           onPressed: () {
             Navigator.of(dialogContext).pop();
-            repoFuture.then((repo) => repo.deleteDocument(document));
+            repoFuture.then((repo) => repo.trashDocument(document));
+            messenger?.showSnackBar(
+              SnackBar(
+                content: Text('“${document.title}” moved to Trash'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
           },
-          child: const Text('Delete'),
+          child: const Text('Move to Trash'),
         ),
       ],
     ),
@@ -229,8 +237,8 @@ void _confirmDeleteFolder(
     builder: (dialogContext) => AlertDialog(
       title: const Text('Delete folder?'),
       content: Text(
-        '“${folder.name}” and EVERYTHING inside it — subfolders, documents, '
-        'pages and ink — will be removed. This cannot be undone.',
+        '“${folder.name}” and its subfolders will be deleted for good. '
+        'Its notes move to Trash — you can restore them from there.',
       ),
       actions: [
         TextButton(
